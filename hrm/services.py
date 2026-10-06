@@ -127,9 +127,12 @@ def record_scan(conn, employee, method, cfg, now=None, note=None):
         "time": now.strftime("%H:%M:%S"),
     }
 
-    if rows and method != "manual":
-        last = datetime.strptime(rows[-1]["ts"], TS_FMT)
-        if (now - last).total_seconds() < cfg["SCAN_COOLDOWN_SECONDS"]:
+    # Chỉ xét các lượt trước (hoặc đúng) thời điểm quét: có thể đã có lượt thủ công nhập trước
+    # với giờ muộn hơn, lượt đó không được làm lượt quét thật bị coi là quét lặp.
+    prior = [datetime.strptime(r["ts"], TS_FMT) for r in rows]
+    prior = [t for t in prior if t <= now]
+    if prior and method != "manual":
+        if (now - prior[-1]).total_seconds() < cfg["SCAN_COOLDOWN_SECONDS"]:
             result["type"] = "duplicate"
             return result
 
@@ -139,7 +142,7 @@ def record_scan(conn, employee, method, cfg, now=None, note=None):
     )
     conn.commit()
 
-    if not rows:
+    if not prior:
         result["type"] = "check_in"
         if not is_workday(now.date(), cfg):
             result["ot"] = True

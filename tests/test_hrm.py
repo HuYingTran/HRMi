@@ -39,6 +39,14 @@ class AttendanceTest(Base):
         self.assertEqual(r3["type"], "check_out")
         self.assertEqual(self.conn.execute("SELECT COUNT(*) FROM attendance_logs").fetchone()[0], 2)
 
+    def test_manual_entry_later_in_day_does_not_block_real_scan(self):
+        # quản lý nhập trước lượt thủ công 17:30; nhân viên quẹt thẻ lúc 07:55 vẫn phải được ghi
+        services.record_scan(self.conn, self.emp, "manual", self.cfg, now=datetime(2026, 10, 5, 17, 30))
+        r = services.record_scan(self.conn, self.emp, "rfid", self.cfg, now=datetime(2026, 10, 5, 7, 55))
+        self.assertEqual(r["type"], "check_in")
+        info = services.employee_period(self.conn, self.emp["id"], "2026-10-05", "2026-10-05", self.cfg)[0]
+        self.assertEqual((info["first_in"].hour, info["last_out"].hour), (7, 17))
+
     def test_grace_period_not_late(self):
         r = services.record_scan(self.conn, self.emp, "rfid", self.cfg, now=datetime(2026, 10, 5, 8, 4))
         self.assertNotIn("late_minutes", r)
@@ -417,7 +425,7 @@ class WebTest(unittest.TestCase):
         self.assertIn("Mã nhân viên đã tồn tại".encode(), r.data)
 
         today = date.today().isoformat()
-        c.post("/attendance/manual", data={"employee_id": "1", "date": today, "time": "08:30"})
+        c.post("/attendance/manual", data={"employee_id": "1", "date": today, "time": "00:00"})
         self.assertIn(b'class="presence in"', c.get("/employees").data)
         c.post("/leaves/new", data={"employee_id": "1", "leave_type": "annual",
                                     "start_date": "2026-12-01", "end_date": "2026-12-02"})
@@ -437,7 +445,7 @@ class WebTest(unittest.TestCase):
         self.assertIn("Trần Thị B", page)
         c.post("/device/simulate", data={"employee_id": "1", "method": "fingerprint"})
         events = c.get("/api/events").get_json()["events"]
-        self.assertEqual(events[-1]["type"], "check_out")  # đã có lượt thủ công lúc 08:30
+        self.assertEqual(events[-1]["type"], "check_out")  # đã có lượt thủ công lúc 00:00
         self.assertIn("Đã duyệt".encode(), c.get("/leaves?status=approved").data)
         self.assertEqual(c.get("/timesheets").status_code, 200)
         self.assertEqual(c.get("/timesheets?month=2026-12").status_code, 200)
