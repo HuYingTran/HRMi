@@ -1,0 +1,14 @@
+[Unit]
+Description=HRMi - Mini HRM
+After=network.target
+
+[Service]
+User=pi
+WorkingDirectory=/home/pi/Code/CheckIn_Pro
+ExecStart=/home/pi/Code/CheckIn_Pro/env/bin/python run.py
+Restart=on-failure
+Environment=PYTHONUNBUFFERED=1
+Environment=HRM_RELOAD=0
+
+[Install]
+WantedBy=multi-user.target

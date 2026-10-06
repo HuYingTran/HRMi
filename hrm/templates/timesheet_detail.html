@@ -1,0 +1,217 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon, avatar, dept, day_status, empty %}
+{% block title %}Bảng công {{ emp.full_name }}{% endblock %}
+{% macro explain_form(iso, d, x) -%}
+  <form method="post" action="{{ url_for('main.timesheet_explain', emp_id=emp.id, month=month) }}" class="x-form">
+    <input type="hidden" name="day" value="{{ iso }}">
+    <textarea name="reason" required placeholder="Lý do (VD: quên quét thẻ khi về, thực tế về lúc 17:30)">{{ x.reason if x else '' }}</textarea>
+    <div class="x-times">
+      <label>Giờ vào đúng<input type="time" name="proposed_in" value="{{ x.proposed_in if x and x.proposed_in else '' }}"></label>
+      <label>Giờ ra đúng<input type="time" name="proposed_out" value="{{ x.proposed_out if x and x.proposed_out else '' }}"></label>
+      <button class="btn small primary">{{ icon('check') }} Lưu</button>
+    </div>
+    <div class="hint">Chỉ điền giờ khi cần bổ sung lượt chấm (quên quét). Để trống nếu chỉ giải thích lý do.</div>
+  </form>
+{%- endmacro %}
+
+{% block content %}
+{% set ts = timesheet %}
+{% set status = ts.status if ts else none %}
+{% set editable = is_self and status in ('sent', 'returned') %}
+{% set reviewing = can_review and status == 'submitted' %}
+{% set todo = [] %}{% for d in flagged %}{% if d.date.isoformat() not in explanations %}{% set _ = todo.append(d) %}{% endif %}{% endfor %}
+{% set pending = explanations.values()|selectattr('status', 'equalto', 'pending')|list %}
+{% set DOW = ['T2','T3','T4','T5','T6','T7','CN'] %}
+{% set X_LABEL = {'pending': 'Chờ xử lý', 'accepted': 'Đã chấp nhận', 'rejected': 'Từ chối'} %}
+{% set X_CLASS = {'pending': 'pending', 'accepted': 'approved', 'rejected': 'rejected'} %}
+
+<div class="page-head">
+  <div class="person">
+    {{ avatar(emp, 'sm') }}
+    <div class="meta"><h1>Bảng công {{ month[5:] }}/{{ month[:4] }} · {{ emp.full_name }}</h1>
+      <div class="sub">{{ emp.code }} · {{ emp.position or '' }} {{ dept(emp.department, emp.department_id) if emp.department }}</div></div>
+  </div>
+  <div class="toolbar" style="margin:0">
+    <form method="get" action="{{ url_for('main.my_timesheet') if is_self and not can_review else '' }}">
+      <input type="month" name="month" value="{{ month }}"
+             onchange="{% if is_self and not can_review %}this.form.submit(){% else %}location.href='{{ url_for('main.timesheet_detail', emp_id=emp.id, month='MONTH') }}'.replace('MONTH', this.value){% endif %}">
+    </form>
+    {% if can_review %}<a class="btn ghost" href="{{ url_for('main.timesheets', month=month) }}">← Danh sách</a>{% endif %}
+  </div>
+</div>
+
+{# ---------------------------------------------------- tiến trình #}
+{% set step = {None: 0, 'sent': 1, 'returned': 1, 'submitted': 2, 'confirmed': 3}[status] %}
+<div class="stepper">
+  {% for label in ['Gửi bảng công', 'Nhân viên xác nhận / giải trình', 'Cấp trên duyệt', 'Đã chốt công'] %}
+  <div class="st {{ 'done' if loop.index0 < step or step == 3 else 'now' if loop.index0 == step else '' }} {{ 'back' if status == 'returned' and loop.index0 == 1 }}">
+    <span class="n">{% if loop.index0 < step or step == 3 %}{{ icon('check') }}{% else %}{{ loop.index }}{% endif %}</span>{{ label }}
+  </div>
+  {% endfor %}
+</div>
+
+{% if not ts %}
+<div class="flash">{{ icon('alert') }}<span>{{ 'Bảng công tạm tính — chưa được gửi cho nhân viên.' if ended else 'Tháng chưa kết thúc — số liệu tạm tính.' }}</span></div>
+{% elif status == 'returned' %}
+<div class="flash error">{{ icon('alert') }}<span><b>Cấp trên trả lại:</b> {{ ts.manager_note }}</span></div>
+{% elif status == 'confirmed' %}
+<div class="flash success">{{ icon('lock') }}<span>Đã chốt bởi <b>{{ ts.confirmed_by_name or '?' }}</b> lúc {{ ts.confirmed_at }}. Dữ liệu tháng đã khoá{{ '' if not ts.manager_note else ' · ' ~ ts.manager_note }}.</span></div>
+{% endif %}
+{% if ts and ts.employee_note %}
+<div class="flash">{{ icon('edit') }}<span><b>Nhân viên ghi chú:</b> {{ ts.employee_note }}</span></div>
+{% endif %}
+
+{# ---------------------------------------------------- tổng hợp #}
+{% set s = summary %}
+{% if s %}
+<div class="stats compact">
+  <div class="stat"><div class="top">Công chuẩn</div><div class="value">{{ s.workdays }}</div></div>
+  <div class="stat ok"><div class="top">Đi làm</div><div class="value">{{ s.present }}</div></div>
+  <div class="stat warn"><div class="top">Đi muộn</div><div class="value">{{ s.late }}<small> · {{ s.late_minutes }}′</small></div></div>
+  <div class="stat info"><div class="top">Công tác</div><div class="value">{{ s.business|num }}</div></div>
+  <div class="stat leave"><div class="top">Phép CL / Ốm-KL</div><div class="value">{{ s.paid_leave|num }}<small> / {{ s.unpaid_leave|num }}</small></div></div>
+  <div class="stat bad"><div class="top">Vắng</div><div class="value">{{ s.absent }}</div></div>
+  <div class="stat ot"><div class="top">OT</div><div class="value">{{ s.ot_hours|num }}<small> h</small></div></div>
+  <div class="stat"><div class="top">Công tính lương</div><div class="value" style="color:var(--accent)">{{ s.payable_days|num }}</div></div>
+</div>
+{% endif %}
+
+<div class="grid-2-1">
+  {# ------------------------------------------------ từng ngày #}
+  <section class="card flush">
+    <div class="card-head">
+      <h2>{{ icon('calendar') }} Chi tiết từng ngày</h2>
+      <label class="hint" style="margin:0"><input type="checkbox" id="only-flagged">Chỉ ngày cần giải trình ({{ flagged|length }})</label>
+    </div>
+    <div class="table-wrap">
+    <table class="days">
+      <thead><tr><th>Ngày</th><th>Vào</th><th>Ra</th><th class="num">Giờ</th><th>Trạng thái</th><th>Giải trình</th></tr></thead>
+      <tbody>
+      {% for d in days %}
+        {% set iso = d.date.isoformat() %}
+        {% set x = explanations.get(iso) %}
+        {% set is_flag = d.status in FLAGGED %}
+        <tr class="{{ 'off' if d.status in ('off', 'upcoming') }} {{ 'flag' if is_flag or x }}" data-flag="{{ 1 if is_flag or x else 0 }}">
+          <td class="mono">{{ DOW[d.date.weekday()] }} {{ d.date.strftime('%d/%m') }}</td>
+          <td class="mono">{{ d.first_in|hm }}{% if d.late_minutes %} <span class="faint">+{{ d.late_minutes }}′</span>{% endif %}</td>
+          <td class="mono">{{ d.last_out|hm }}</td>
+          <td class="num">{{ d.hours|num if d.hours else '' }}</td>
+          <td>{{ day_status(d) if d.status not in ('off', 'upcoming') else '' }}</td>
+          <td class="xcell">
+            {% if x %}
+              <div class="x">
+                <div>{{ x.reason }}
+                  {% if x.proposed_in or x.proposed_out %}<span class="chip">{{ icon('clock') }}{{ x.proposed_in or '--:--' }} → {{ x.proposed_out or '--:--' }}</span>{% endif %}
+                  <span class="badge {{ X_CLASS[x.status] }}">{{ X_LABEL[x.status] }}</span></div>
+                {% if x.reply %}<div class="hint">↳ {{ x.reply }}</div>{% endif %}
+                {% if reviewing and x.status == 'pending' %}
+                <form method="post" action="{{ url_for('main.timesheet_review', emp_id=emp.id, month=month, day=iso) }}" class="x-actions">
+                  <input name="reply" placeholder="Phản hồi (tuỳ chọn)">
+                  <button class="btn small primary" name="action" value="accept" title="{{ 'Chấp nhận và thêm chấm công theo giờ đề nghị' if x.proposed_in or x.proposed_out else 'Chấp nhận' }}">{{ icon('check') }}</button>
+                  <button class="btn small danger" name="action" value="reject" title="Từ chối">{{ icon('x') }}</button>
+                </form>
+                {% endif %}
+                {% if editable %}
+                <div class="x-row">
+                  <details class="x-edit"><summary class="btn link">Sửa</summary>{{ explain_form(iso, d, x) }}</details>
+                  <form class="inline" method="post" action="{{ url_for('main.timesheet_explain_delete', emp_id=emp.id, month=month, day=iso) }}"><button class="btn link danger">Xoá</button></form>
+                </div>
+                {% endif %}
+              </div>
+            {% elif editable and d.status not in ('upcoming',) %}
+              <details class="x-edit {{ '' if is_flag else 'x-add' }}"><summary class="btn small {{ 'primary' if is_flag else 'ghost' }}" title="Giải trình ngày này">{{ 'Giải trình' if is_flag else '+ Giải trình' }}</summary>{{ explain_form(iso, d, none) }}</details>
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </section>
+
+  {# ------------------------------------------------ thao tác #}
+  <section class="stack" style="align-self:start;position:sticky;top:1rem">
+    <div class="card">
+      {% if editable %}
+        <h2>{{ icon('clipboard-check') }} Xác nhận bảng công</h2>
+        {% if todo %}
+        <p class="hint" style="margin-top:0">Còn <b style="color:var(--warn)">{{ todo|length }} ngày</b> có vấn đề chưa giải trình:
+          {% for d in todo %}<span class="chip">{{ d.date.strftime('%d/%m') }}</span> {% endfor %}</p>
+        {% else %}
+        <p class="hint" style="margin-top:0">Kiểm tra từng ngày. Nếu có sai sót, bấm "Giải trình" ở ngày đó và đề nghị giờ đúng.</p>
+        {% endif %}
+        <form method="post" action="{{ url_for('main.timesheet_submit', emp_id=emp.id, month=month) }}"
+              {% if todo %}onsubmit="return confirm('Còn {{ todo|length }} ngày chưa giải trình. Vẫn gửi duyệt?')"{% endif %}>
+          <div class="field"><label>Ghi chú cho cấp trên</label><textarea name="note" placeholder="Tuỳ chọn">{{ ts.employee_note or '' }}</textarea></div>
+          <div class="actions"><button class="btn primary">{{ icon('check') }} {{ 'Xác nhận & gửi duyệt' if explanations else 'Xác nhận đúng & gửi duyệt' }}</button></div>
+        </form>
+      {% elif reviewing %}
+        <h2>{{ icon('inbox') }} Duyệt bảng công</h2>
+        {% if pending %}<p class="hint" style="margin-top:0">Còn <b style="color:var(--warn)">{{ pending|length }} giải trình</b> chưa xử lý. Chấp nhận giải trình có giờ đề nghị sẽ tự thêm chấm công.</p>{% endif %}
+        <form method="post" action="{{ url_for('main.timesheet_confirm', emp_id=emp.id, month=month) }}"
+              {% if pending %}onsubmit="return confirm('Còn giải trình chưa xử lý. Vẫn chốt công?')"{% endif %}>
+          <div class="field"><label>Ghi chú khi chốt</label><input name="note" placeholder="Tuỳ chọn"></div>
+          <div class="actions"><button class="btn primary" {% if pending and not is_admin %}disabled title="Còn giải trình chưa xử lý"{% endif %}>{{ icon('lock') }} Chốt công</button></div>
+        </form>
+        <form method="post" action="{{ url_for('main.timesheet_return', emp_id=emp.id, month=month) }}" class="form-section" style="margin-top:1.1rem;padding-top:1.1rem">
+          <div class="field"><label>Lý do trả lại</label><textarea name="note" required placeholder="VD: ngày 15/09 cần bổ sung đơn nghỉ"></textarea></div>
+          <div class="actions"><button class="btn danger">{{ icon('x') }} Trả lại nhân viên</button></div>
+        </form>
+        <p class="hint">Cần sửa trực tiếp? <a href="{{ url_for('main.employee_detail', emp_id=emp.id, month=month) }}">Thêm chấm công thủ công / đơn nghỉ</a> ở hồ sơ nhân viên{% if not is_admin %} (cần quyền admin){% endif %}.</p>
+      {% elif status == 'submitted' %}
+        <h2>{{ icon('inbox') }} Đã gửi duyệt</h2>
+        <p class="hint" style="margin:0">Bảng công đang chờ cấp trên duyệt{{ ' từ ' ~ ts.submitted_at if ts.submitted_at }}.</p>
+      {% elif status == 'confirmed' %}
+        <h2>{{ icon('lock') }} Đã chốt</h2>
+        {% if can_review %}
+        <form method="post" action="{{ url_for('main.timesheet_reopen', emp_id=emp.id, month=month) }}" onsubmit="return confirm('Mở lại bảng công để sửa dữ liệu?')">
+          <div class="actions" style="margin-top:0"><button class="btn">{{ icon('unlock') }} Mở lại</button></div>
+        </form>
+        {% else %}<p class="hint" style="margin:0">Bảng công đã được chốt, dùng làm căn cứ tính lương.</p>{% endif %}
+      {% elif can_review and is_admin and ended %}
+        <h2>{{ icon('clipboard-check') }} Chưa gửi</h2>
+        <form method="post" action="{{ url_for('main.timesheet_send') }}">
+          <input type="hidden" name="month" value="{{ month }}"><input type="hidden" name="employee_id" value="{{ emp.id }}">
+          <div class="actions" style="margin-top:0"><button class="btn primary">{{ icon('inbox') }} Gửi cho nhân viên xác nhận</button></div>
+        </form>
+        <form method="post" action="{{ url_for('main.timesheet_confirm', emp_id=emp.id, month=month) }}" onsubmit="return confirm('Chốt trực tiếp, bỏ qua bước nhân viên xác nhận?')">
+          <div class="actions"><button class="btn ghost">{{ icon('lock') }} Chốt trực tiếp</button></div>
+        </form>
+      {% else %}
+        <h2>{{ icon('clock') }} Tạm tính</h2>
+        <p class="hint" style="margin:0">Bảng công sẽ được gửi để xác nhận sau khi kết thúc tháng.</p>
+      {% endif %}
+    </div>
+    {% if explanations %}
+    <div class="card">
+      <h2>{{ icon('edit') }} Giải trình ({{ explanations|length }})</h2>
+      <ul class="events">
+        {% for day, x in explanations.items() %}
+        <li><time>{{ day[8:] }}/{{ day[5:7] }}</time><div class="ev-body">{{ x.reason }}{% if x.reply %}<small>↳ {{ x.reply }}</small>{% endif %}</div><span class="badge {{ X_CLASS[x.status] }}">{{ X_LABEL[x.status] }}</span></li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}
+
+
+
+{% block scripts %}
+<script>
+(function () {
+  const box = document.getElementById('only-flagged');
+  const key = 'ts-only-flagged';
+  function apply() {
+    document.querySelectorAll('table.days tbody tr').forEach(tr => {
+      tr.hidden = box.checked && tr.dataset.flag !== '1';
+    });
+    try { localStorage.setItem(key, box.checked ? '1' : '0'); } catch (e) {}
+  }
+  try { box.checked = localStorage.getItem(key) === '1'; } catch (e) {}
+  box.addEventListener('change', apply);
+  apply();
+})();
+</script>
+{% endblock %}

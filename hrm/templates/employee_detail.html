@@ -1,0 +1,253 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon, avatar, dept, empty %}
+{% block title %}{{ emp.full_name }}{% endblock %}
+{% macro org_node(e, cls='', tag='') -%}
+  {%- set linkable = cls != 'me' and (can('employees.view', e.id) or e.id == g.user.employee_id) -%}
+  {%- set you = e.id == g.user.employee_id -%}
+  <{{ 'a' if linkable else 'div' }} class="node onode {{ cls }} {{ 'you' if you }}" {% if linkable %}href="{{ url_for('main.employee_detail', emp_id=e.id) }}"{% endif %}
+     {% if you %}title="Vị trí của bạn"{% endif %}>
+    {% if you %}<span class="you-tag">{{ icon('user-check') }} Bạn</span>{% endif %}
+    {{ avatar(e, 'md' if you else 'sm') }}
+    <div class="node-name">{{ e.full_name }}</div>
+    <div class="hint">{{ e.position or '—' }}</div>
+    {% if e.department %}{{ dept(e.department, e.department_id) }}{% endif %}
+    {% if tag %}<span class="badge plain {{ 'leave' if cls == 'boss' else 'off' }}">{{ tag }}</span>{% endif %}
+  </{{ 'a' if linkable else 'div' }}>
+{%- endmacro %}
+
+{% block content %}
+{% set worked = days|selectattr('first_in')|rejectattr('status', 'equalto', 'ot')|list %}
+{% set ot = days|selectattr('status', 'equalto', 'ot')|list %}
+{% set METHOD = {'rfid': 'Thẻ', 'fingerprint': 'Vân tay', 'manual': 'Thủ công'} %}
+
+<section class="card">
+  <div class="profile-head">
+    {{ avatar(emp, 'xl') }}
+    <div class="info">
+      <h1>{{ emp.full_name }}</h1>
+      <div class="muted">{{ emp.position or '—' }}</div>
+      <div class="tags">
+        <span class="chip mono">{{ emp.code }}</span>
+        {% if emp.department %}{{ dept(emp.department, emp.department_id) }}{% endif %}
+        <span class="badge {{ emp.status }}">{{ 'Đang làm' if emp.status == 'active' else 'Đã nghỉ' }}</span>
+      </div>
+    </div>
+    <div class="actions" style="margin:0">
+      {% if is_self %}<a class="btn" href="{{ url_for('main.my_timesheet', month=month) }}">{{ icon('clipboard-check') }} Bảng công</a>{% elif can('timesheets.review', emp.id) %}<a class="btn" href="{{ url_for('main.timesheet_detail', emp_id=emp.id, month=month) }}">{{ icon('clipboard-check') }} Bảng công</a>{% endif %}
+      {% if can('leaves.approve', emp.id) or (is_self and can('self.leave')) %}<a class="btn" href="{{ url_for('main.leave_new', employee_id=emp.id) }}">{{ icon('umbrella') }} Xin nghỉ</a>{% endif %}
+      {% if can('employees.edit', emp.id) %}<a class="btn primary" href="{{ url_for('main.employee_edit', emp_id=emp.id) }}">{{ icon('edit') }} Sửa</a>{% endif %}{% if is_self %}<a class="btn" href="{{ url_for('main.account') }}">{{ icon('key') }} Đổi mật khẩu</a>{% endif %}
+    </div>
+  </div>
+</section>
+
+<section class="card section-gap">
+  <div class="card-head" style="margin-bottom:.25rem">
+    <h2>{{ icon('building') }} Sơ đồ tổ chức</h2>
+    <span class="hint">{{ org.chain|length }} cấp trên · {{ org.subs|length }} cấp dưới trực thuộc</span>
+  </div>
+  {% if org.chain or org.subs %}
+  <div class="org-wrap" style="padding:1rem 0 .5rem">
+    <div class="org">
+      {% set ids = org.chain|map(attribute='id')|list + [emp.id] %}
+      {% set my_level = ids.index(g.user.employee_id) if g.user.employee_id in ids else -1 %}
+      {% for b in org.chain %}<ul class="{{ 'path' if 1 <= loop.index0 <= my_level }}"><li>{{ org_node(b, 'boss' if loop.last else 'up', 'Cấp trên trực tiếp' if loop.last else '') }}{% endfor %}
+      <ul class="{{ 'path' if org.chain and my_level == org.chain|length }}"><li>{{ org_node(emp, 'me') }}
+        {% if org.subs %}<ul>{% for c in org.subs %}<li>{{ org_node(c, '', ('Quản lý ' ~ org.sub_counts[c.id] ~ ' người') if org.sub_counts[c.id] else '') }}</li>{% endfor %}</ul>{% endif %}
+      </li></ul>
+      {% for b in org.chain %}</li></ul>{% endfor %}
+    </div>
+  </div>
+  {% else %}
+  <p class="hint">Chưa có cấp trên hay cấp dưới: nhân viên chưa thuộc phòng ban nào có trưởng phòng.</p>
+  {% endif %}
+</section>
+
+<div class="grid section-gap">
+  <section class="card">
+    <h2>{{ icon('users') }} Hồ sơ</h2>
+    <dl class="dl">
+      <dt>Vào làm</dt><dd class="mono">{{ emp.hire_date|d or '—' }}</dd>
+      <dt>Ngày sinh</dt><dd class="mono">{{ emp.dob|d or '—' }}{% if emp.gender %} <span class="faint">· {{ emp.gender }}</span>{% endif %}</dd>
+      <dt>SĐT</dt><dd class="mono">{{ emp.phone or '—' }}</dd>
+      <dt>Email</dt><dd>{{ emp.email or '—' }}</dd>
+      <dt>Địa chỉ</dt><dd>{{ emp.address or '—' }}</dd>
+      {% if is_admin %}
+      <dt id="account">Đăng nhập</dt>
+      <dd>
+        <form method="post" action="{{ url_for('main.employee_account', emp_id=emp.id) }}" style="display:flex;gap:.4rem;align-items:center;flex-wrap:wrap">
+          {% if account %}
+            <span class="chip mono">{{ account.username }}</span>
+            <button class="btn small" name="action" value="reset" onclick="return confirm('Tạo mật khẩu mới?')">{{ icon('key') }} Đặt lại MK</button>
+            {% if account.role == 'admin' %}<span class="badge approved plain">Quản trị</span>{% endif %}
+            <button class="btn small" name="action" value="toggle_admin" onclick="return confirm('{{ 'Bỏ quyền quản trị?' if account.role == 'admin' else 'Cấp toàn quyền quản trị cho tài khoản này?' }}')">{{ 'Bỏ quản trị' if account.role == 'admin' else 'Cấp quản trị' }}</button>
+            <button class="btn small danger" name="action" value="delete" title="Xoá tài khoản" onclick="return confirm('Xoá tài khoản đăng nhập?')">{{ icon('trash') }}</button>
+          {% else %}
+            <button class="btn small" name="action" value="create">{{ icon('plus') }} Tạo tài khoản</button>
+          {% endif %}
+        </form>
+      </dd>
+      {% endif %}
+    </dl>
+  </section>
+
+  <section class="card" id="credentials">
+    <h2>{{ icon('key') }} Xác thực</h2>
+    <div class="cred {{ 'on' if emp.rfid_uid }}">
+      <span class="cred-ico">{{ icon('card', 'lg') }}</span>
+      <div class="body"><b>Thẻ RFID</b><span class="mono faint">{{ emp.rfid_uid or '—' }}</span></div>
+      {% if is_admin %}      <form class="inline" method="post" action="{{ url_for('main.employee_enroll', emp_id=emp.id, kind='rfid') }}">
+        <button class="btn small" {% if not hw.rfid.ok %}disabled title="Chưa kết nối đầu đọc"{% endif %}{% endif %}>Quét</button></form>
+      {% if emp.rfid_uid %}
+      <form class="inline" method="post" action="{{ url_for('main.employee_clear_credential', emp_id=emp.id, kind='rfid') }}" onsubmit="return confirm('Gỡ thẻ?')">
+        <button class="btn small danger" title="Gỡ thẻ">{{ icon('trash') }}</button></form>{% endif %}
+    </div>
+    <div class="cred {{ 'on' if emp.fingerprint_id is not none }}">
+      <span class="cred-ico">{{ icon('fingerprint', 'lg') }}</span>
+      <div class="body"><b>Vân tay</b><span class="mono faint">{{ ('#' ~ emp.fingerprint_id) if emp.fingerprint_id is not none else '—' }}</span></div>
+      {% if is_admin %}      <form class="inline" method="post" action="{{ url_for('main.employee_enroll', emp_id=emp.id, kind='fingerprint') }}">
+        <button class="btn small" {% if not hw.fingerprint.ok %}disabled title="Chưa kết nối cảm biến"{% endif %}{% endif %}>Đăng ký</button></form>
+      {% if emp.fingerprint_id is not none %}
+      <form class="inline" method="post" action="{{ url_for('main.employee_clear_credential', emp_id=emp.id, kind='fingerprint') }}" onsubmit="return confirm('Xoá vân tay?')">
+        <button class="btn small danger" title="Xoá vân tay">{{ icon('trash') }}</button></form>{% endif %}
+    </div>
+    <div id="task" class="task {{ task.state if task else '' }}" {{ 'hidden' if not task }}>
+      <span class="spinner"></span>
+      <span class="msg" id="task-msg">{{ task.message if task else '' }}</span>
+      <form id="task-cancel" class="inline" method="post" action="{{ url_for('main.employee_enroll_cancel', emp_id=emp.id) }}"
+            {{ 'hidden' if not task or task.state not in ('waiting', 'running') }}>
+        <button class="btn small">Huỷ</button></form>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>{{ icon('umbrella') }} Phép {{ today.year }}</h2>
+    <div style="display:flex;align-items:center;gap:1.25rem;flex-wrap:wrap">
+      <div class="balance-ring" style="--p:{{ ((balance.remaining / balance.quota) * 100)|round if balance.quota else 0 }}">
+        <div><b>{{ balance.remaining|num }}</b><small>/ {{ balance.quota|num }} ngày</small></div>
+      </div>
+      <dl class="dl">
+        <dt>Đã nghỉ</dt><dd class="mono">{{ balance.used|num }}</dd>
+        <dt>Chờ duyệt</dt><dd class="mono">{{ balance.pending|num }}</dd>
+      </dl>
+    </div>
+  </section>
+</div>
+
+<section class="card section-gap">
+  <div class="card-head">
+    <h2>{{ icon('calendar') }} Tháng {{ month[5:] }}/{{ month[:4] }}
+      {% if timesheet and timesheet.status == 'confirmed' %}<a class="badge approved" href="{{ url_for('main.timesheet_detail', emp_id=emp.id, month=month) }}" title="Chốt bởi {{ timesheet.confirmed_by_name or '?' }} lúc {{ timesheet.confirmed_at }}">{{ icon('lock') }} Đã chốt công</a>{% endif %}</h2>
+    <form method="get"><input type="month" name="month" value="{{ month }}" onchange="this.form.submit()"></form>
+  </div>
+  <div class="stats compact">
+    <div class="stat ok"><div class="top">Đi làm</div><div class="value">{{ worked|length }}</div></div>
+    <div class="stat warn"><div class="top">Đi muộn</div><div class="value">{{ worked|selectattr('late_minutes')|list|length }}<small> · {{ worked|sum(attribute='late_minutes') }}′</small></div></div>
+    <div class="stat info"><div class="top">Công tác</div><div class="value">{{ days|selectattr('status', 'equalto', 'business')|list|length }}</div></div>
+    <div class="stat leave"><div class="top">Nghỉ phép</div><div class="value">{{ days|selectattr('status', 'equalto', 'leave')|list|length }}</div></div>
+    <div class="stat bad"><div class="top">Vắng</div><div class="value">{{ days|selectattr('status', 'equalto', 'absent')|list|length }}</div></div>
+    <div class="stat ot"><div class="top">OT</div><div class="value">{{ ot|length }}<small> · {{ (ot|sum(attribute='hours'))|round(1)|num }}h</small></div></div>
+    <div class="stat"><div class="top">Giờ công</div><div class="value">{{ (worked|sum(attribute='hours'))|round(1)|num }}<small> h</small></div></div>
+  </div>
+  <div class="split">
+    <div>
+      <div class="cal">
+        {% for d in ['T2','T3','T4','T5','T6','T7','CN'] %}<div class="dow">{{ d }}</div>{% endfor %}
+        {% for _ in range(days[0].date.weekday()) %}<div></div>{% endfor %}
+        {% for d in days %}
+          <div class="d {{ d.status }} {{ 'today' if d.date == today }}"
+               title="{{ d.date|d }} · {{ DAY_STATUSES[d.status] }}{% if d.first_in %} · {{ d.first_in|hm }}–{{ d.last_out|hm or '?' }}{% if d.late_minutes %} · muộn {{ d.late_minutes }}′{% endif %}{% endif %}">
+            {{ d.date.day }}{% if d.first_in %}<span class="t">{{ d.first_in|hm }}</span>{% endif %}
+          </div>
+        {% endfor %}
+      </div>
+      <div class="legend">
+        <span><i style="background:var(--c-good)"></i>Đúng giờ</span>
+        <span><i style="background:var(--c-warn)"></i>Muộn</span>
+        <span><i style="background:var(--c-trip)"></i>Công tác</span>
+        <span><i style="background:var(--c-leave)"></i>Phép</span>
+        <span><i style="background:var(--c-bad)"></i>Vắng</span>
+        <span><i style="background:var(--c-ot)"></i>OT</span>
+      </div>
+    </div>
+    <div>
+      {% if logs %}
+      <ul class="events">
+        {% for l in logs[:10] %}
+        <li>
+          <time>{{ l.ts[11:16] }}</time>
+          <span class="ev-ico {{ 'in' if l.method != 'manual' }}" title="{{ METHOD[l.method] }}">{{ icon('card' if l.method == 'rfid' else 'fingerprint' if l.method == 'fingerprint' else 'edit') }}</span>
+          <div class="ev-body mono">{{ l.ts|d }}{% if l.note %}<small>{{ l.note }}</small>{% endif %}</div>
+          {% if can('attendance.edit', emp.id) %}<form class="inline" method="post" action="{{ url_for('main.attendance_log_delete', log_id=l.id) }}" onsubmit="return confirm('Xoá lượt này?')"><button class="btn small ghost" title="Xoá">{{ icon('trash') }}</button></form>{% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}{{ empty('Chưa có dữ liệu') }}{% endif %}
+    </div>
+  </div>
+</section>
+
+<div class="grid section-gap">
+  <section class="card">
+    <h2>{{ icon('umbrella') }} Đơn nghỉ</h2>
+    {% if leaves %}
+    <ul class="events">
+      {% for l in leaves %}
+      <li>
+        <div class="ev-body"><span class="mono">{{ l.start_date|d }}{% if l.end_date != l.start_date %} → {{ l.end_date|d }}{% endif %}</span>
+          <small>{{ LEAVE_TYPES[l.leave_type] }} · {{ l.days|num }} ngày</small></div>
+        <span class="badge {{ l.status }}">{{ LEAVE_STATUSES[l.status] }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}{{ empty('Chưa có đơn') }}{% endif %}
+  </section>
+
+  {% if can('attendance.edit', emp.id) %}
+  <section class="card">
+    <h2>{{ icon('edit') }} Chấm thủ công</h2>
+    <form method="post" action="{{ url_for('main.attendance_manual') }}" class="form-grid">
+      <input type="hidden" name="employee_id" value="{{ emp.id }}">
+      <div class="field"><label>Ngày</label><input type="date" name="date" required></div>
+      <div class="field"><label>Giờ</label><input type="time" name="time" required></div>
+      <div class="field wide"><label>Ghi chú</label><input name="note" placeholder="Quên thẻ…"></div>
+      <div><button class="btn">{{ icon('plus') }} Thêm</button></div>
+    </form>
+  </section>
+  {% endif %}
+</div>
+
+{% if is_admin %}
+<form method="post" action="{{ url_for('main.employee_delete', emp_id=emp.id) }}" style="text-align:right;margin-top:1.1rem"
+      onsubmit='return confirm({{ ("Xoá vĩnh viễn " ~ emp.full_name ~ " cùng toàn bộ chấm công và nghỉ phép? Nếu nhân viên nghỉ việc, nên đổi trạng thái thay vì xoá.")|tojson }})'>
+  <button class="btn small danger">{{ icon('trash') }} Xoá nhân viên</button>
+</form>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  const box = document.getElementById('task');
+  const msg = document.getElementById('task-msg');
+  const cancel = document.getElementById('task-cancel');
+  const active = {{ 'true' if task and task.state in ('waiting', 'running') else 'false' }};
+  if (!active) return;
+  const timer = setInterval(async () => {
+    try {
+      const res = await fetch('{{ url_for("main.api_enroll_status", emp_id=emp.id) }}');
+      const { task } = await res.json();
+      if (!task) return;
+      box.hidden = false;
+      box.className = 'task ' + task.state;
+      msg.textContent = task.message;
+      const running = task.state === 'waiting' || task.state === 'running';
+      cancel.hidden = !running;
+      if (!running) {
+        clearInterval(timer);
+        if (task.state === 'done') setTimeout(() => location.reload(), 1200);
+      }
+    } catch (e) { /* mạng chập chờn, thử lại lần sau */ }
+  }, 700);
+})();
+</script>
+{% endblock %}

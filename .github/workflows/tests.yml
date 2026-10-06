@@ -1,0 +1,19 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      # Test chạy không cần phần cứng nên chỉ cài Flask + Pillow
+      - run: pip install "flask>=3.0" pillow
+      - run: python -m unittest discover tests -v
+        env:
+          HRM_HARDWARE_ENABLED: "0"

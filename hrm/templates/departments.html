@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon, avatar, dept_color, empty %}
+{% block title %}Phòng ban{% endblock %}
+
+{% macro parent_options(selected, blocked) -%}
+  <option value="">— Cấp cao nhất —</option>
+  {% for p in departments if p.id not in blocked %}<option value="{{ p.id }}" {{ 'selected' if p.id == selected }}>{{ p.name }}</option>{% endfor %}
+{%- endmacro %}
+
+{% macro manager_options(selected) -%}
+  <option value="">— Chưa có —</option>
+  {% for e in employees %}<option value="{{ e.id }}" {{ 'selected' if e.id == selected }}>{{ e.code }} · {{ e.full_name }}</option>{% endfor %}
+{%- endmacro %}
+
+{% block content %}
+<div class="page-head">
+  <div><h1>Phòng ban</h1><div class="sub mono">{{ departments|length }} phòng · {{ employees|length }} người</div></div>
+  <div class="toolbar" style="margin:0">
+    <div class="seg" role="tablist">
+      <a href="#" data-view="tree" role="tab">{{ icon('grid') }} Sơ đồ</a>
+      <a href="#" data-view="list" role="tab">{{ icon('users') }} Danh sách</a>
+    </div>
+    <button class="btn primary" type="button" id="add-btn">{{ icon('plus') }} Thêm</button>
+  </div>
+</div>
+
+<form method="post" class="card toolbar" id="add-form" hidden style="align-items:flex-end">
+  <div class="field grow"><label>Tên</label><input name="name" required placeholder="Tên phòng ban"></div>
+  <div class="field"><label>Cấp trên</label><select name="parent_id">{{ parent_options(None, []) }}</select></div>
+  <div class="field"><label>Trưởng phòng</label><select name="manager_id">{{ manager_options(None) }}</select></div>
+  <button class="btn primary">{{ icon('check') }} Lưu</button>
+</form>
+
+{# ---------------------------------------------------------- sơ đồ cây #}
+<section class="card org-wrap" data-panel="tree">
+  {% if departments %}
+  <div class="org">
+    <ul>
+      <li>
+        <div class="node root">
+          <span class="brand-mark" style="width:30px;height:30px;border-radius:9px">{{ icon('logo') }}</span>
+          <div class="node-name">HRMi</div>
+          <span class="chip mono">{{ employees|length }} người</span>
+        </div>
+        <ul>
+          {% for d in tree recursive %}
+          <li>
+            <a class="node" href="{{ url_for('main.employees', department=d.id) }}" style="{{ dept_color(d.id) }}">
+              <span class="node-bar"></span>
+              <div class="node-name">{{ d.name }}</div>
+              {% if d.manager %}
+              <div class="node-mgr">{{ avatar(d.manager, 'sm') }}<span>{{ d.manager.full_name }}</span></div>
+              {% else %}<div class="node-mgr faint">—</div>{% endif %}
+              {% set others = d.members|rejectattr('id', 'equalto', d.manager_id)|list %}
+              <div class="node-foot">
+                <span class="avstack">
+                  {% for m in others[:5] %}<span title="{{ m.full_name }}">{{ avatar(m, 'xs') }}</span>{% endfor %}
+                  {% if others|length > 5 %}<span class="avatar xs more">+{{ others|length - 5 }}</span>{% endif %}
+                </span>
+                <span class="mono faint">{{ d.members|length }}</span>
+              </div>
+            </a>
+            {% if d.children %}<ul>{{ loop(d.children) }}</ul>{% endif %}
+          </li>
+          {% endfor %}
+          {% if unassigned %}
+          <li>
+            <a class="node dashed" href="{{ url_for('main.employees') }}">
+              <div class="node-name faint">Chưa phân</div>
+              <div class="node-foot">
+                <span class="avstack">{% for m in unassigned[:5] %}<span title="{{ m.full_name }}">{{ avatar(m, 'xs') }}</span>{% endfor %}</span>
+                <span class="mono faint">{{ unassigned|length }}</span>
+              </div>
+            </a>
+          </li>
+          {% endif %}
+        </ul>
+      </li>
+    </ul>
+  </div>
+  {% else %}{{ empty('Chưa có phòng ban', 'building') }}{% endif %}
+</section>
+
+{# ---------------------------------------------------------- danh sách #}
+<section class="card flush table-wrap" data-panel="list" hidden>
+  <table>
+    <thead><tr><th>Phòng ban</th><th>Cấp trên</th><th>Trưởng phòng</th><th class="num">Người</th><th></th></tr></thead>
+    <tbody>
+    {% for d in departments %}
+      <tr>
+        <td>
+          <form method="post" id="f{{ d.id }}"><input type="hidden" name="id" value="{{ d.id }}"></form>
+          <span style="display:flex;align-items:center"><span class="dept-dot" style="{{ dept_color(d.id) }}"></span>
+          <input form="f{{ d.id }}" name="name" value="{{ d.name }}" required style="min-width:160px"></span>
+        </td>
+        <td><select form="f{{ d.id }}" name="parent_id">{{ parent_options(d.parent_id, d.blocked) }}</select></td>
+        <td><select form="f{{ d.id }}" name="manager_id">{{ manager_options(d.manager_id) }}</select></td>
+        <td class="num"><a href="{{ url_for('main.employees', department=d.id) }}">{{ d.members|length }}</a></td>
+        <td class="num" style="white-space:nowrap">
+          <button form="f{{ d.id }}" class="btn small" title="Lưu">{{ icon('check') }}</button>
+          <form class="inline" method="post" action="{{ url_for('main.department_delete', dept_id=d.id) }}" onsubmit='return confirm({{ ("Xoá phòng ban " ~ d.name ~ "?")|tojson }})'>
+            <button class="btn small danger" title="Xoá">{{ icon('trash') }}</button></form>
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="5">{{ empty('Chưa có phòng ban', 'building') }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  const tabs = document.querySelectorAll('[data-view]');
+  const panels = document.querySelectorAll('[data-panel]');
+  function show(view) {
+    tabs.forEach(t => t.classList.toggle('on', t.dataset.view === view));
+    panels.forEach(p => p.hidden = p.dataset.panel !== view);
+    try { localStorage.setItem('dept-view', view); } catch (e) {}
+  }
+  tabs.forEach(t => t.addEventListener('click', ev => { ev.preventDefault(); show(t.dataset.view); }));
+  let saved = 'tree';
+  try { saved = localStorage.getItem('dept-view') || 'tree'; } catch (e) {}
+  show(saved);
+
+  const form = document.getElementById('add-form');
+  document.getElementById('add-btn').addEventListener('click', () => {
+    form.hidden = !form.hidden;
+    if (!form.hidden) form.querySelector('input').focus();
+  });
+})();
+</script>
+{% endblock %}

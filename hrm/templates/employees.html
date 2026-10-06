@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon, avatar, dept, person, empty, presence_legend %}
+{% block title %}Nhân viên{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><h1>Nhân viên</h1><div class="sub"><span id="emp-count">{{ employees|length }}</span> người</div></div>
+  <div class="toolbar" style="margin:0">
+    <div class="seg" role="tablist">
+      <a href="#" data-view="list" role="tab" title="Danh sách">{{ icon('list') }} Danh sách</a>
+      <a href="#" data-view="tiles" role="tab" title="Biểu tượng lớn">{{ icon('tiles') }} Biểu tượng</a>
+    </div>
+    {% if is_admin %}<a class="btn primary" href="{{ url_for('main.employee_new') }}">{{ icon('plus') }} Thêm</a>{% endif %}
+  </div>
+</div>
+
+<form class="toolbar" method="get">
+  <div class="search field grow">{{ icon('search') }}<input name="q" id="emp-q" value="{{ q }}" placeholder="Tìm mã, tên, SĐT, chức vụ, phòng ban…" autocomplete="off"
+    onkeydown="if (event.key === 'Enter') event.preventDefault()"></div>
+  <select name="department" onchange="this.form.submit()" style="width:auto">
+    <option value="">Mọi phòng ban</option>
+    {% for d in departments %}<option value="{{ d.id }}" {{ 'selected' if dept == d.id|string }}>{{ d.name }}</option>{% endfor %}
+  </select>
+  <select name="status" onchange="this.form.submit()" style="width:auto">
+    <option value="active" {{ 'selected' if status == 'active' }}>Đang làm</option>
+    <option value="inactive" {{ 'selected' if status == 'inactive' }}>Đã nghỉ</option>
+    <option value="all" {{ 'selected' if status == 'all' }}>Tất cả</option>
+  </select>
+</form>
+{{ presence_legend() }}
+
+<div class="card flush table-wrap" data-panel="list">
+  <table>
+    <thead><tr><th>Nhân viên</th><th>Phòng ban</th><th>Chức vụ</th><th>SĐT</th><th>Xác thực</th><th>Trạng thái</th></tr></thead>
+    <tbody>
+    {% for e in employees %}
+      <tr data-search="{{ [e.code, e.full_name, e.phone, e.email, e.position, e.department]|select|join(' ') }}">
+        <td>{{ person(e) }}</td>
+        <td>{{ dept(e.department, e.department_id) }}</td>
+        <td class="muted">{{ e.position or '—' }}</td>
+        <td class="mono" style="font-size:.84rem">{{ e.phone or '' }}</td>
+        <td>
+          <span class="chip {{ 'on' if e.rfid_uid }}" title="{{ e.rfid_uid or 'Chưa gán thẻ' }}">{{ icon('card') }}</span>
+          <span class="chip {{ 'on' if e.fingerprint_id is not none }}" title="{{ ('Vị trí #' ~ e.fingerprint_id) if e.fingerprint_id is not none else 'Chưa đăng ký' }}">{{ icon('fingerprint') }}</span>
+        </td>
+        <td><span class="badge {{ e.status }}">{{ 'Đang làm' if e.status == 'active' else 'Đã nghỉ' }}</span></td>
+      </tr>
+    {% else %}
+      <tr><td colspan="6">{{ empty('Không có nhân viên', 'users') }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="card" id="no-match" hidden>{{ empty('Không tìm thấy nhân viên phù hợp', 'search') }}</div>
+
+<div class="tiles" data-panel="tiles" hidden>
+  {% for e in employees %}
+  <a data-search="{{ [e.code, e.full_name, e.phone, e.email, e.position, e.department]|select|join(' ') }}" class="tile {{ 'off' if e.status != 'active' }}" href="{{ url_for('main.employee_detail', emp_id=e.id) }}">
+    <span class="tile-creds">
+      <span class="chip {{ 'on' if e.rfid_uid }}" title="{{ e.rfid_uid or 'Chưa gán thẻ' }}">{{ icon('card') }}</span>
+      <span class="chip {{ 'on' if e.fingerprint_id is not none }}" title="{{ ('Vị trí #' ~ e.fingerprint_id) if e.fingerprint_id is not none else 'Chưa đăng ký' }}">{{ icon('fingerprint') }}</span>
+    </span>
+    {{ avatar(e, 'xl') }}
+    <b>{{ e.full_name }}</b>
+    <span class="muted">{{ e.position or '—' }}</span>
+    <span class="tile-foot"><span class="mono faint">{{ e.code }}</span>{{ dept(e.department, e.department_id) }}</span>
+    {% if e.status != 'active' %}<span class="badge inactive">Đã nghỉ</span>{% endif %}
+  </a>
+  {% else %}
+  <div class="card" style="grid-column:1/-1">{{ empty('Không có nhân viên', 'users') }}</div>
+  {% endfor %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  // tìm kiếm tức thì, bỏ dấu tiếng Việt: "nguyen" khớp "Nguyễn"
+  const fold = s => (s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/gi, 'd').toLowerCase();
+  const input = document.getElementById('emp-q');
+  const items = [...document.querySelectorAll('[data-search]')].map(el => ({ el, text: fold(el.dataset.search) }));
+  const count = document.getElementById('emp-count');
+  const none = document.getElementById('no-match');
+  function filter() {
+    const words = fold(input.value).split(/\s+/).filter(Boolean);
+    let shown = 0;
+    items.forEach(it => {
+      const ok = words.every(w => it.text.includes(w));
+      it.el.hidden = !ok;
+      if (ok && it.el.tagName === 'TR') shown++;
+    });
+    count.textContent = shown;
+    none.hidden = shown > 0 || !items.length;
+    const url = new URL(location.href);
+    if (input.value.trim()) url.searchParams.set('q', input.value.trim()); else url.searchParams.delete('q');
+    history.replaceState(null, '', url);
+  }
+  input.addEventListener('input', filter);
+  if (input.value) filter();
+})();
+
+(function () {
+  const tabs = document.querySelectorAll('[data-view]');
+  const panels = document.querySelectorAll('[data-panel]');
+  function show(view) {
+    tabs.forEach(t => t.classList.toggle('on', t.dataset.view === view));
+    panels.forEach(p => p.hidden = p.dataset.panel !== view);
+    try { localStorage.setItem('emp-view', view); } catch (e) {}
+  }
+  tabs.forEach(t => t.addEventListener('click', ev => { ev.preventDefault(); show(t.dataset.view); }));
+  let saved = 'list';
+  try { saved = localStorage.getItem('emp-view') || 'list'; } catch (e) {}
+  show(saved);
+})();
+</script>
+{% endblock %}

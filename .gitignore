@@ -1,0 +1,25 @@
+# Môi trường Python
+env/
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Dữ liệu khi chạy: CSDL, bản sao lưu, khoá bí mật, ảnh nhân viên (KHÔNG đưa lên git)
+instance/
+*.db
+*.db-shm
+*.db-wal
+*.db.bak*
+
+# File sinh ra khi thử nghiệm
+demo_avatars.png
+*.log
+
+# Trình soạn thảo / hệ điều hành
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db

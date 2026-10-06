@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon, avatar, dept_color, empty %}
+{% block title %}Phân quyền{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><h1>Phân quyền</h1>
+    <div class="sub">Quyền đi theo sơ đồ phòng ban: trưởng phòng quản lý cả nhánh bên dưới, không tự duyệt cho mình.</div></div>
+  <a class="btn" href="{{ url_for('main.departments') }}">{{ icon('building') }} Sửa sơ đồ phòng ban</a>
+</div>
+
+<div class="split">
+  <section class="card">
+    <h2>{{ icon('grid') }} Cây phân quyền</h2>
+    <div class="ptree-root">
+      <div class="pnode root">
+        <span class="brand-mark" style="width:28px;height:28px;border-radius:8px">{{ icon('logo') }}</span>
+        <div><b>Quản trị hệ thống</b><div class="hint">Toàn quyền · {{ admins|length }} tài khoản</div></div>
+      </div>
+      <ul class="ptree">
+        {% for d in tree recursive %}
+        <li>
+          <div class="pnode" style="{{ dept_color(d.id) }}">
+            <span class="pbar"></span>
+            <div class="pmain">
+              <b>{{ d.name }}</b> <span class="faint mono">{{ d.members }} người</span>
+              <div class="pmgr">
+                {% if d.manager %}
+                  {{ avatar(d.manager, 'sm') }}
+                  <span><a href="{{ url_for('main.employee_detail', emp_id=d.manager.id) }}">{{ d.manager.full_name }}</a>
+                    <span class="hint">· trưởng phòng{% if d.account %} · <span class="mono">{{ d.account.username }}</span>{% else %} · <span style="color:var(--warn)">chưa có tài khoản</span>{% endif %}</span></span>
+                {% else %}<span class="hint" style="color:var(--warn)">Chưa có trưởng phòng — nhân viên do cấp trên của nhánh duyệt</span>{% endif %}
+              </div>
+            </div>
+            {% if d.manager %}
+            <div class="pscope" title="Số nhân viên trong cả nhánh mà trưởng phòng này quản lý">
+              <b class="mono">{{ d.scope }}</b><span>quản lý</span>
+            </div>
+            {% endif %}
+          </div>
+          {% if d.manager %}<div class="pboss hint">Duyệt bảng công của trưởng phòng: {{ d.boss.full_name if d.boss else 'Quản trị' }}</div>{% endif %}
+          {% if d.children %}<ul class="ptree">{{ loop(d.children) }}</ul>{% endif %}
+        </li>
+        {% endfor %}
+        {% if unassigned %}<li><div class="pnode dashed"><div class="pmain"><b class="faint">Chưa phân phòng ban</b> <span class="faint mono">{{ unassigned }} người</span><div class="hint">Do quản trị duyệt</div></div></div></li>{% endif %}
+      </ul>
+    </div>
+  </section>
+
+  <section class="stack" style="align-self:start">
+    <form method="post" class="card">
+      <h2>{{ icon('key') }} Ma trận quyền</h2>
+      <table class="matrix">
+        <thead><tr><th>Quyền</th><th class="c">Quản trị</th>{% for r, label in ROLES.items() %}<th class="c">{{ label }}</th>{% endfor %}</tr></thead>
+        <tbody>
+        {% for key, perm in PERMS.items() %}{% set label, scope = perm[0], perm[1] %}
+          <tr>
+            <td>{{ label }}<div class="hint">{{ 'Nhánh quản lý' if scope == 'team' else 'Bản thân' }}</div></td>
+            <td class="c"><span class="tick on">{{ icon('check') }}</span></td>
+            {% for r in ROLES %}
+            <td class="c">
+              {% if r == 'employee' and scope == 'team' %}<span class="faint">—</span>
+              {% else %}
+              <label class="switch"><input type="checkbox" name="perm" value="{{ r }}:{{ key }}" {{ 'checked' if settings[(r, key)] }} {{ 'disabled' if (r, key) in LOCKED }}><span></span></label>
+              {% endif %}
+            </td>
+            {% endfor %}
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      <div class="actions"><button class="btn primary">{{ icon('check') }} Lưu phân quyền</button></div>
+    </form>
+
+    <div class="card">
+      <h2>{{ icon('users') }} Tài khoản quản trị</h2>
+      <ul class="events">
+        {% for a in admins %}
+        <li><span class="ev-ico in">{{ icon('key') }}</span>
+          <div class="ev-body"><b class="mono">{{ a.username }}</b>{% if a.full_name %}<small><a href="{{ url_for('main.employee_detail', emp_id=a.emp_id) }}#account">{{ a.full_name }}</a></small>{% endif %}</div></li>
+        {% endfor %}
+      </ul>
+      <p class="hint">Cấp hoặc bỏ quyền quản trị cho nhân viên ở mục "Đăng nhập" trong hồ sơ của họ.</p>
+    </div>
+  </section>
+</div>
+{% endblock %}

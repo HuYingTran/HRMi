@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon %}
+{% block title %}Tạo đơn nghỉ{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Đơn nghỉ mới</h1></div>
+<form method="post" class="card" style="max-width:760px">
+  <div class="form-grid">
+    <div class="field wide"><label>Nhân viên</label>
+      <select name="employee_id" required>
+        <option value=""></option>
+        {% for e in employees %}<option value="{{ e.id }}" {{ 'selected' if form.employee_id|string == e.id|string }}>{{ e.code }} · {{ e.full_name }}</option>{% endfor %}
+      </select></div>
+    <div class="field"><label>Loại</label>
+      <select name="leave_type">
+        {% for k, v in LEAVE_TYPES.items() %}<option value="{{ k }}" {{ 'selected' if form.leave_type == k }}>{{ v }}</option>{% endfor %}
+      </select></div>
+    <div class="field"><label>Từ ngày</label><input type="date" name="start_date" value="{{ form.start_date }}" required></div>
+    <div class="field"><label>Đến ngày</label><input type="date" name="end_date" value="{{ form.end_date }}" required></div>
+    <div class="field" style="justify-content:end"><label style="padding-bottom:.6rem"><input type="checkbox" name="half_day" value="1" {{ 'checked' if form.half_day }}>Nửa ngày</label></div>
+    <div class="field wide"><label>Lý do</label><textarea name="reason" placeholder="Việc gia đình…">{{ form.reason or '' }}</textarea></div>
+  </div>
+  <div class="actions">
+    <button class="btn primary">{{ icon('check') }} Gửi</button>
+    <a class="btn danger" href="{{ url_for('main.leaves') }}">{{ icon('x') }} Huỷ</a>
+  </div>
+</form>
+{% endblock %}

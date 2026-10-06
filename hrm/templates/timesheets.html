@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon, dept, avatar, empty %}
+{% block title %}{{ 'Chốt công' if is_admin else 'Duyệt bảng công' }}{% endblock %}
+{% macro ts_badge(status) -%}
+  <span class="badge {{ {None: 'off', 'sent': 'leave', 'returned': 'bad', 'submitted': 'pending', 'confirmed': 'approved'}[status] }}">{{ STATUSES[status] }}</span>
+{%- endmacro %}
+{% block content %}
+{% set by = {} %}
+{% for key in STATUSES %}{% set _ = by.update({key: rows|selectattr('status', 'equalto', key)|list|length}) %}{% endfor %}
+{% set ready = rows|selectattr('status', 'equalto', 'submitted')|rejectattr('pending')|list %}
+<div class="page-head">
+  <div><h1>{{ 'Chốt công' if is_admin else 'Duyệt bảng công' }} {{ month[5:] }}/{{ month[:4] }}</h1>
+    <div class="sub mono">{{ by['confirmed'] }}/{{ rows|length }} đã chốt</div></div>
+  <div class="toolbar" style="margin:0">
+    <form method="get"><input type="month" name="month" value="{{ month }}" onchange="this.form.submit()"></form>
+    {% if is_admin %}
+    <a class="btn" href="{{ url_for('main.timesheets_csv', month=month) }}">{{ icon('download') }} CSV</a>
+    {% if ended %}
+    <form method="post" action="{{ url_for('main.timesheet_send') }}" onsubmit="return confirm('Gửi bảng công tháng {{ month[5:] }} cho {{ by[None] }} nhân viên chưa nhận?')">
+      <input type="hidden" name="month" value="{{ month }}">
+      <button class="btn" {{ 'disabled' if not by[None] }}>{{ icon('inbox') }} Gửi bảng công ({{ by[None] }})</button>
+    </form>
+    <form method="post" action="{{ url_for('main.timesheet_confirm_bulk') }}" onsubmit="return confirm('Chốt {{ ready|length }} bảng công đã được nhân viên gửi duyệt?')">
+      <input type="hidden" name="month" value="{{ month }}">
+      <button class="btn primary" {{ 'disabled' if not ready }}>{{ icon('lock') }} Chốt {{ ready|length }} bảng đã duyệt</button>
+    </form>
+    {% endif %}
+    {% endif %}
+  </div>
+</div>
+
+{% if not ended %}
+<div class="flash warning">{{ icon('alert') }}<span>Tháng chưa kết thúc: số liệu đang là tạm tính, chưa gửi / chốt được.</span></div>
+{% endif %}
+
+<div class="flow">
+  {% for key, label, ico in [(None, 'Chưa gửi', 'clipboard-check'), ('sent', 'Chờ NV xác nhận', 'users'), ('returned', 'Bị trả lại', 'alert'), ('submitted', 'Chờ duyệt', 'inbox'), ('confirmed', 'Đã chốt', 'lock')] %}
+  <div class="flow-step s-{{ key or 'none' }}">
+    <span class="ico">{{ icon(ico) }}</span>
+    <div><div class="value">{{ by[key] }}</div><div class="label">{{ label }}</div></div>
+  </div>
+  {% if not loop.last %}<span class="flow-arrow">→</span>{% endif %}
+  {% endfor %}
+</div>
+
+<div class="card flush table-wrap">
+  <table class="ts">
+    <thead><tr>
+      <th>Nhân viên</th><th>Phòng ban</th>
+      <th class="num">Đi làm</th><th class="num">Công tác</th>
+      <th class="num" title="Phép năm, nghỉ khác">Phép CL</th><th class="num" title="Nghỉ ốm, không lương">Ốm/KL</th>
+      <th class="num">Vắng</th><th class="num">OT</th><th class="num">Công TL</th>
+      <th>Trạng thái</th><th></th>
+    </tr></thead>
+    <tbody>
+    {% for r in rows %}
+      {% set d = r.data %}
+      {% set link = url_for('main.timesheet_detail', emp_id=r.employee.id, month=month) %}
+      <tr class="{{ 'locked' if r.status == 'confirmed' }}">
+        <td><a class="person" href="{{ link }}" style="color:inherit">{{ avatar(r.employee) }}
+          <div class="meta"><b>{{ r.employee.full_name }}</b><small>{{ r.employee.code }}</small></div></a></td>
+        <td>{{ dept(r.employee.department, r.employee.department_id) }}</td>
+        <td class="num">{{ d.present }}<span class="faint">/{{ d.workdays }}</span></td>
+        <td class="num">{{ d.business|num if d.business else '' }}</td>
+        <td class="num">{{ d.paid_leave|num if d.paid_leave else '' }}</td>
+        <td class="num">{{ d.unpaid_leave|num if d.unpaid_leave else '' }}</td>
+        <td class="num">{{ d.absent or '' }}</td>
+        <td class="num">{{ (d.ot_hours|num ~ 'h') if d.ot_days else '' }}</td>
+        <td class="num"><b>{{ d.payable_days|num }}</b></td>
+        <td><div class="ts-issues">
+          {{ ts_badge(r.status) }}
+          {% if r.pending %}<span class="badge warn plain" title="Giải trình chờ xử lý">{{ r.pending }} giải trình</span>{% endif %}
+          {% if r.status in (None, 'sent', 'returned') %}{% for i in r.issues %}<span class="badge off plain">{{ i }}</span>{% endfor %}{% endif %}
+        </div></td>
+        <td class="num" style="white-space:nowrap">
+          {% if is_admin and r.status is none and ended %}
+          <form class="inline" method="post" action="{{ url_for('main.timesheet_send') }}">
+            <input type="hidden" name="month" value="{{ month }}"><input type="hidden" name="employee_id" value="{{ r.employee.id }}">
+            <button class="btn small">Gửi</button></form>
+          {% endif %}
+          <a class="btn small {{ 'primary' if r.status == 'submitted' }}" href="{{ link }}">{{ 'Duyệt' if r.status == 'submitted' else 'Chi tiết' }} →</a>
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="11">{{ empty('Chưa có dữ liệu', 'clipboard-check') }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+<div class="legend">
+  <span class="faint">Quy trình: Gửi bảng công → nhân viên kiểm tra, giải trình, gửi duyệt → cấp trên (trưởng phòng) chấp nhận giải trình, chốt hoặc trả lại. Công TL = đi làm + công tác + nghỉ có lương.</span>
+</div>
+{% endblock %}

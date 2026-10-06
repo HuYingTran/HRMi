@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon, event_item, empty %}
+{% block title %}Thiết bị{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Thiết bị</h1></div>
+<div class="grid">
+  <section class="card">
+    <div class="cred {{ 'on' if hw.rfid.ok }}" style="margin-bottom:1rem">
+      <span class="cred-ico">{{ icon('card', 'lg') }}</span>
+      <div class="body"><b>RFID PN532</b><span class="hint">I2C</span></div>
+      <span class="chip {{ 'on' if hw.rfid.ok }}"><span class="dot {{ 'ok' if hw.rfid.ok else 'bad' }}"></span>{{ 'ONLINE' if hw.rfid.ok else 'OFFLINE' }}</span>
+    </div>
+    <dl class="dl">
+      <dt>Bus</dt><dd class="mono">I2C-1 · 0x24</dd>
+      <dt>Chân</dt><dd class="mono">SDA GPIO2 · SCL GPIO3</dd>
+      {% if hw.rfid.info %}<dt>Firmware</dt><dd class="mono">{{ hw.rfid.info }}</dd>{% endif %}
+      {% if hw.rfid.error %}<dt>Lỗi</dt><dd class="mono" style="color:var(--bad)">{{ hw.rfid.error }}</dd>{% endif %}
+    </dl>
+  </section>
+  <section class="card">
+    <div class="cred {{ 'on' if hw.fingerprint.ok }}" style="margin-bottom:1rem">
+      <span class="cred-ico">{{ icon('fingerprint', 'lg') }}</span>
+      <div class="body"><b>Vân tay AS608</b><span class="hint">UART</span></div>
+      <span class="chip {{ 'on' if hw.fingerprint.ok }}"><span class="dot {{ 'ok' if hw.fingerprint.ok else 'bad' }}"></span>{{ 'ONLINE' if hw.fingerprint.ok else 'OFFLINE' }}</span>
+    </div>
+    <dl class="dl">
+      <dt>Cổng</dt><dd class="mono">{{ config.FINGERPRINT_PORT }} @ {{ config.FINGERPRINT_BAUDRATE }}</dd>
+      <dt>Chân</dt><dd class="mono">TX→GPIO15 · RX→GPIO14</dd>
+      {% if hw.fingerprint.ok %}
+      <dt>Mẫu</dt><dd class="mono">{{ hw.fingerprint.templates if hw.fingerprint.templates is not none else '?' }} / {{ hw.fingerprint.capacity }}</dd>
+      {% endif %}
+      {% if hw.fingerprint.error %}<dt>Lỗi</dt><dd class="mono" style="color:var(--bad)">{{ hw.fingerprint.error }}</dd>{% endif %}
+    </dl>
+  </section>
+</div>
+<section class="card section-gap">
+  <h2>{{ icon('cpu') }} Mô phỏng</h2>
+  <form method="post" action="{{ url_for('main.device_simulate') }}" class="toolbar" style="margin:0">
+    <div class="field grow">
+      <select name="employee_id" required>{% for e in employees %}<option value="{{ e.id }}">{{ e.code }} · {{ e.full_name }}</option>{% endfor %}</select></div>
+    <div class="field">
+      <select name="method"><option value="rfid">Thẻ</option><option value="fingerprint">Vân tay</option></select></div>
+    <button class="btn primary">{{ icon('fingerprint') }} Quét</button>
+  </form>
+</section>
+
+<section class="card section-gap">
+  <div class="card-head"><h2>{{ icon('activity') }} Nhật ký quét</h2><a class="hint" href="{{ url_for('main.kiosk') }}" target="_blank">Kiosk ↗</a></div>
+  {% if events %}
+  <ul class="events">{% for e in events %}{{ event_item(e, True) }}{% endfor %}</ul>
+  {% else %}{{ empty('Chưa có sự kiện', 'activity') }}{% endif %}
+</section>
+{% endblock %}

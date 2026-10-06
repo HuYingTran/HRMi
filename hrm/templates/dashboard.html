@@ -1,0 +1,230 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon, avatar, dept, person, event_item, empty %}
+{% block title %}Bảng điều khiển{% endblock %}
+{% block content %}
+{% set on_time = rows|selectattr('first_in')|rejectattr('late_minutes')|list|length %}
+{% set late = rows|selectattr('first_in')|selectattr('late_minutes')|list|length %}
+{% set leave_n = counts.leave %}
+{% set trip_n = counts.business %}
+{% set not_yet = counts.upcoming %}
+{% set absent = counts.absent %}
+{% set rate = ((checked_in / total) * 100)|round|int if total else 0 %}
+
+<div class="page-head">
+  <div>
+    <h1>Tổng quan</h1>
+    <div class="sub">{{ ['Thứ Hai','Thứ Ba','Thứ Tư','Thứ Năm','Thứ Sáu','Thứ Bảy','Chủ nhật'][today.weekday()] }}, {{ today|d }}</div>
+  </div>
+  <a class="btn primary" href="{{ url_for('main.employee_new') }}">{{ icon('plus') }} Nhân viên</a>
+</div>
+
+<div class="stats">
+  <div class="stat"><div class="top">Nhân sự <span class="ico">{{ icon('users') }}</span></div><div class="value">{{ total }}</div></div>
+  <div class="stat ok"><div class="top">Có mặt <span class="ico">{{ icon('user-check') }}</span></div><div class="value">{{ checked_in }}<small> · {{ rate }}%</small></div></div>
+  <div class="stat warn"><div class="top">Đi muộn <span class="ico">{{ icon('alert') }}</span></div><div class="value">{{ late }}</div></div>
+  <div class="stat leave"><div class="top">Nghỉ phép <span class="ico">{{ icon('umbrella') }}</span></div><div class="value">{{ leave_n }}</div></div>
+  <div class="stat info"><div class="top">Công tác <span class="ico">{{ icon('building') }}</span></div><div class="value">{{ trip_n }}</div></div>
+  <div class="stat bad"><div class="top">Vắng <span class="ico">{{ icon('calendar-x') }}</span></div><div class="value">{{ absent }}</div></div>
+  <a class="stat" href="{{ url_for('main.leaves') }}" style="color:inherit"><div class="top">Chờ duyệt <span class="ico">{{ icon('inbox') }}</span></div><div class="value">{{ pending|length }}</div></a>
+</div>
+
+<div class="grid-2-1">
+  <section class="card">
+    <div class="card-head">
+      <h2>{{ icon('chart') }} 2 tuần gần nhất</h2>
+    </div>
+    <div class="legend" id="trend-legend" style="margin:0 0 .75rem"></div>
+    <div class="chart" id="trend"></div>
+    <details style="margin-top:.75rem">
+      <summary class="hint" style="cursor:pointer">Bảng số liệu</summary>
+      <div class="table-wrap" style="margin-top:.5rem">
+        <table>
+          <thead><tr><th>Ngày</th><th class="num">Đúng giờ</th><th class="num">Đi muộn</th><th class="num">OT</th><th class="num">Công tác</th><th class="num">Nghỉ phép</th><th class="num">Vắng</th></tr></thead>
+          <tbody>{% for t in trend if not t.future %}<tr><td class="mono">{{ ['T2','T3','T4','T5','T6','T7','CN'][loop.index0 % 7] }} {{ t.date|d }}</td><td class="num">{{ t.on_time }}</td><td class="num">{{ t.late }}</td><td class="num">{{ t.ot }}</td><td class="num">{{ t.business }}</td><td class="num">{{ t.leave }}</td><td class="num">{{ t.absent }}</td></tr>{% endfor %}</tbody>
+        </table>
+      </div>
+    </details>
+  </section>
+
+  <section class="card">
+    <div class="card-head"><h2>{{ icon('activity') }} Hôm nay</h2><span class="mono faint">{{ checked_in }}/{{ total }}</span></div>
+    <div class="meter" role="img" aria-label="Đúng giờ {{ on_time }}, đi muộn {{ late }}, nghỉ phép {{ leave_n }}, vắng {{ absent }}, chưa tới giờ {{ not_yet }}">
+      {% if total %}
+      <span style="width:{{ on_time / total * 100 }}%;background:var(--c-good)"></span>
+      <span style="width:{{ late / total * 100 }}%;background:var(--c-warn)"></span>
+      <span style="width:{{ trip_n / total * 100 }}%;background:var(--c-trip)"></span>
+      <span style="width:{{ leave_n / total * 100 }}%;background:var(--c-leave)"></span>
+      <span style="width:{{ absent / total * 100 }}%;background:var(--c-bad)"></span>
+      {% endif %}
+    </div>
+    <div class="legend">
+      <span><i style="background:var(--c-good)"></i>Đúng giờ<b>{{ on_time }}</b></span>
+      <span><i style="background:var(--c-warn)"></i>Đi muộn<b>{{ late }}</b></span>
+      <span><i style="background:var(--c-trip)"></i>Công tác<b>{{ trip_n }}</b></span>
+      <span><i style="background:var(--c-leave)"></i>Nghỉ phép<b>{{ leave_n }}</b></span>
+      <span><i style="background:var(--c-bad)"></i>Vắng<b>{{ absent }}</b></span>
+      {% if not_yet %}<span><i style="background:var(--surface-3)"></i>Chưa tới<b>{{ not_yet }}</b></span>{% endif %}
+    </div>
+
+    <h2 style="margin-top:1.6rem">{{ icon('alert') }} Đi muộn · T{{ today.month }}</h2>
+    {% if late_rank %}
+    {% set max_late = late_rank[0].late %}
+    <ul class="rank">
+      {% for r in late_rank %}
+      <li>
+        {{ person(r.employee, dept(r.employee.department, r.employee.department_id)) }}
+        <span class="bar" style="margin-left:auto"><span style="width:{{ r.late / max_late * 100 }}%"></span></span>
+        <span class="mono" style="min-width:4.5rem;text-align:right">{{ r.late }} lần</span>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}{{ empty('Chưa ai đi muộn', 'check') }}{% endif %}
+  </section>
+</div>
+
+<div class="grid section-gap">
+  <section class="card">
+    <div class="card-head">
+      <h2>{{ icon('fingerprint') }} Lượt chấm gần nhất</h2>
+    </div>
+    {% if recent %}
+    <ul class="events">
+      {% for r in recent %}
+      <li>
+        <time>{{ r.ts[11:16] }}</time>
+        <span class="ev-ico {{ 'in' if r.method != 'manual' else '' }}">{{ icon('card' if r.method == 'rfid' else 'fingerprint' if r.method == 'fingerprint' else 'edit') }}</span>
+        <div class="ev-body">{{ person({'id': r.id, 'full_name': r.full_name, 'code': r.code, 'photo': r.photo}, {'rfid': 'Thẻ', 'fingerprint': 'Vân tay', 'manual': 'Thủ công'}[r.method]) }}</div>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}{{ empty('Chưa có dữ liệu') }}{% endif %}
+  </section>
+
+  <section class="card">
+    <div class="card-head"><h2>{{ icon('inbox') }} Chờ duyệt</h2><a href="{{ url_for('main.leaves') }}" class="hint">→</a></div>
+    {% if pending %}
+    <ul class="events">
+      {% for l in pending %}
+      <li>
+        <div class="ev-body">{{ person({'id': l.employee_id, 'full_name': l.full_name, 'code': l.code, 'photo': l.photo},
+            LEAVE_TYPES[l.leave_type] ~ ' · ' ~ (l.start_date|d)[:5] ~ ((' → ' ~ (l.end_date|d)[:5]) if l.end_date != l.start_date else '') ~ ' · ' ~ (l.days|num) ~ ' ngày') }}</div>
+        <form class="inline" method="post" action="{{ url_for('main.leave_action', leave_id=l.id, action='approve') }}"><button class="btn small primary" title="Duyệt">{{ icon('check') }}</button></form>
+        <form class="inline" method="post" action="{{ url_for('main.leave_action', leave_id=l.id, action='reject') }}"><button class="btn small danger" title="Từ chối">{{ icon('x') }}</button></form>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}{{ empty('Không có đơn', 'check') }}{% endif %}
+    {% if on_leave %}
+    <h2 style="margin-top:1.4rem">{{ icon('umbrella') }} Nghỉ / công tác hôm nay</h2>
+    <div style="display:flex;flex-wrap:wrap;gap:.75rem">
+      {% for r in on_leave %}{{ person(r.employee, LEAVE_TYPES[r.leave.leave_type] ~ (' · ½ ngày' if r.leave.half_day else '')) }}{% endfor %}
+    </div>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  const data = {{ trend|tojson }};
+  const host = document.getElementById('trend');
+  const legend = document.getElementById('trend-legend');
+  if (!data.length) { host.innerHTML = '<div class="empty">Chưa có dữ liệu.</div>'; return; }
+  const series = [
+    { key: 'on_time', label: 'Đúng giờ', color: 'var(--c-good)' },
+    { key: 'late', label: 'Đi muộn', color: 'var(--c-warn)' },
+    { key: 'ot', label: 'OT', color: 'var(--c-ot)' },
+    { key: 'business', label: 'Công tác', color: 'var(--c-trip)' },
+    { key: 'leave', label: 'Nghỉ phép', color: 'var(--c-leave)' },
+    { key: 'absent', label: 'Vắng', color: 'var(--c-bad)' },
+  ];
+  legend.innerHTML = series.map(s =>
+    `<span><i style="background:${s.color}"></i>${s.label}<b>${data.reduce((a, d) => a + d[s.key], 0)}</b></span>`).join('');
+
+  const W = 720, H = 290, padL = 30, padB = 42, padT = 30;
+  const DOW = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
+  const todayIso = {{ today.isoformat()|tojson }};
+  const max = Math.max(1, ...data.map(d => series.reduce((a, s) => a + d[s.key], 0)));
+  const step = Math.ceil(max / 4);
+  const top = step * 4;
+  const plotH = H - padB - padT;
+  const slot = (W - padL) / data.length;
+  const bw = Math.min(30, slot * 0.58);
+  const y = v => padT + plotH - (v / top) * plotH;
+  const dm = iso => iso.slice(8, 10) + '/' + iso.slice(5, 7);
+  let svg = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Biểu đồ cột chồng số nhân viên theo trạng thái, tuần trước và tuần này">`;
+  // nền mờ cho thứ 7, CN
+  data.forEach((d, i) => {
+    if (!d.workday) svg += `<rect class="weekend" x="${padL + slot * i + 2}" y="${padT}" width="${slot - 4}" height="${plotH}" rx="6"/>`;
+  });
+  for (let v = 0; v <= top; v += step) {
+    svg += `<line class="gridline" x1="${padL}" x2="${W}" y1="${y(v)}" y2="${y(v)}"/>`;
+    svg += `<text class="axis-label" x="${padL - 8}" y="${y(v) + 4}" text-anchor="end">${v}</text>`;
+  }
+  // nhãn tuần + nét đứt chia 2 tuần
+  for (let w = 0; w * 7 < data.length; w++) {
+    const wk = data.slice(w * 7, w * 7 + 7);
+    const cx = padL + slot * (w * 7 + wk.length / 2);
+    const name = wk.some(d => d.date === todayIso) ? 'Tuần này' : 'Tuần trước';
+    svg += `<text class="week-label" x="${cx}" y="14" text-anchor="middle">${name}<tspan class="axis-label" dx="8">${dm(wk[0].date)} – ${dm(wk[wk.length - 1].date)}</tspan></text>`;
+    if (w > 0) {
+      const xs = padL + slot * w * 7;
+      svg += `<line class="week-split" x1="${xs}" x2="${xs}" y1="2" y2="${H - 4}"/>`;
+    }
+  }
+  data.forEach((d, i) => {
+    const cx = padL + slot * i + slot / 2;
+    const x = cx - bw / 2;
+    let acc = 0, segs = '';
+    const visible = series.filter(s => d[s.key] > 0);
+    visible.forEach((s, j) => {
+      const v = d[s.key];
+      const y0 = y(acc), y1 = y(acc + v);
+      // khe 2px giữa các đoạn; đoạn trên cùng bo góc 4px
+      const h = Math.max(0, y0 - y1 - (j > 0 ? 2 : 0));
+      const isTop = j === visible.length - 1;
+      const r = isTop ? Math.min(4, h, bw / 2) : 0;
+      const yt = y1, yb = yt + h;
+      segs += `<path fill="${s.color}" d="M${x},${yb} V${yt + r} Q${x},${yt} ${x + r},${yt} H${x + bw - r} Q${x + bw},${yt} ${x + bw},${yt + r} V${yb} Z"/>`;
+      acc += v;
+    });
+    if (d.future) segs += `<rect class="future" x="${x}" y="${y(0) - 3}" width="${bw}" height="3" rx="1.5"/>`;
+    const isToday = d.date === todayIso;
+    svg += `<g class="col" data-i="${i}">${segs}` +
+           `<text class="dow${isToday ? ' today' : ''}${d.workday ? '' : ' off'}" x="${cx}" y="${H - 22}" text-anchor="middle">${DOW[i % 7]}</text>` +
+           `<text class="axis-label${isToday ? ' today' : ''}" x="${cx}" y="${H - 7}" text-anchor="middle">${dm(d.date)}</text>` +
+           `<rect class="hit" x="${padL + slot * i}" y="0" width="${slot}" height="${H}"/></g>`;
+  });
+  svg += '</svg>';
+  host.innerHTML = svg;
+
+  const tip = document.createElement('div');
+  tip.className = 'tooltip'; tip.hidden = true; host.appendChild(tip);
+  const dow = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
+  host.querySelectorAll('.col').forEach(g => {
+    g.addEventListener('mouseenter', () => {
+      const d = data[+g.dataset.i];
+      const [yy, mm, dd] = d.date.split('-');
+      const wd = dow[new Date(+yy, mm - 1, +dd).getDay()];
+      const note = d.future ? 'Chưa tới' : !d.workday ? 'Ngày nghỉ' : '';
+      tip.innerHTML = `<div class="t">${wd}, ${dd}/${mm}/${yy}${note ? ` <span class="faint">· ${note}</span>` : ''}</div>` +
+        (d.future ? '' : series.slice().reverse().map(s => `<div class="r"><i style="background:${s.color}"></i>${s.label}<b>${d[s.key]}</b></div>`).join(''));
+      tip.hidden = false;
+      host.querySelectorAll('.col').forEach(o => o.classList.toggle('dim', o !== g));
+    });
+    g.addEventListener('mousemove', ev => {
+      const box = host.getBoundingClientRect();
+      let left = ev.clientX - box.left + 14;
+      if (left + tip.offsetWidth > box.width) left = ev.clientX - box.left - tip.offsetWidth - 14;
+      tip.style.left = left + 'px';
+      tip.style.top = Math.max(0, ev.clientY - box.top - tip.offsetHeight / 2) + 'px';
+    });
+    g.addEventListener('mouseleave', () => {
+      tip.hidden = true;
+      host.querySelectorAll('.col').forEach(o => o.classList.remove('dim'));
+    });
+  });
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="vi" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Máy chấm công · HRMi</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <style>
+    body { min-height: 100vh; display: flex; flex-direction: column; overflow-x: hidden; }
+    .k-top { display: flex; justify-content: space-between; align-items: center; padding: 1.25rem 2rem; }
+    .k-main { flex: 1; display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(280px, 1fr); gap: 2rem; align-items: center; padding: 1rem 2rem 2rem; max-width: 1280px; width: 100%; margin: 0 auto; }
+    #clock { font-family: var(--mono); font-size: clamp(3.5rem, 10vw, 7.5rem); font-weight: 700; letter-spacing: -.04em; line-height: 1;
+             background: linear-gradient(180deg, var(--text), color-mix(in srgb, var(--text) 55%, transparent)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+    #clock .sec { font-size: .38em; color: var(--accent); -webkit-text-fill-color: var(--accent); margin-left: .3rem; }
+    #date { color: var(--muted); font-size: 1.1rem; margin-top: .5rem; text-transform: capitalize; }
+    .scanner { position: relative; width: min(320px, 70vw); aspect-ratio: 1; margin: 2.5rem 0 0; }
+    .ring { position: absolute; inset: 0; border-radius: 50%; border: 1px solid var(--border-strong); }
+    .ring.r2 { inset: 12%; border-style: dashed; animation: spin 24s linear infinite; }
+    .ring.sweep { inset: -1px; border: 0; background: conic-gradient(from 0deg, transparent 0 75%, color-mix(in srgb, var(--accent) 55%, transparent) 100%);
+                  -webkit-mask: radial-gradient(circle, transparent 62%, #000 63%); mask: radial-gradient(circle, transparent 62%, #000 63%); animation: spin 3s linear infinite; }
+    .core { position: absolute; inset: 24%; border-radius: 50%; display: grid; place-items: center;
+            background: radial-gradient(circle, color-mix(in srgb, var(--accent) 18%, var(--surface)), var(--surface)); box-shadow: var(--glow); color: var(--accent); transition: all .25s; }
+    .core svg { width: 42%; height: 42%; stroke-width: 1.4; }
+    .scanner.ok .core { color: var(--ok); box-shadow: 0 0 0 1px var(--ok), 0 0 60px -6px var(--ok); background: radial-gradient(circle, var(--ok-soft), var(--surface)); }
+    .scanner.late .core { color: var(--warn); box-shadow: 0 0 0 1px var(--warn), 0 0 60px -6px var(--warn); background: radial-gradient(circle, var(--warn-soft), var(--surface)); }
+    .scanner.bad .core { color: var(--bad); box-shadow: 0 0 0 1px var(--bad), 0 0 60px -6px var(--bad); background: radial-gradient(circle, var(--bad-soft), var(--surface)); animation: shake .35s; }
+    .scanner.ok .sweep, .scanner.late .sweep, .scanner.bad .sweep { animation-duration: .8s; }
+    @keyframes shake { 25% { transform: translateX(-6px); } 75% { transform: translateX(6px); } }
+    .result { padding: 2rem; min-height: 230px; display: flex; flex-direction: column; justify-content: center; }
+    .result .label { font-family: var(--mono); font-size: .75rem; letter-spacing: .2em; text-transform: uppercase; color: var(--faint); }
+    #headline { font-size: clamp(1.6rem, 3.4vw, 2.4rem); font-weight: 750; letter-spacing: -.02em; margin-top: .6rem; line-height: 1.15; }
+    #detail { color: var(--muted); font-size: 1.1rem; margin-top: .6rem; }
+    #detail b { color: var(--text); font-family: var(--mono); }
+    .result.ok #headline { color: var(--ok); }
+    .result.late #headline { color: var(--warn); }
+    .result.bad #headline { color: var(--bad); }
+    .methods { display: flex; gap: .6rem; margin-top: 1.4rem; flex-wrap: wrap; }
+    @media (max-width: 860px) { .k-main { grid-template-columns: 1fr; text-align: center; } .scanner { margin: 2rem auto 0; } .methods { justify-content: center; } }
+  </style>
+</head>
+<body>
+{% include "_icons.html" %}
+<div class="k-top">
+  <div class="brand">
+    <span class="brand-mark"><svg class="i lg"><use href="#i-logo"/></svg></span>
+    <span><div class="brand-name">HRMi</div><div class="brand-sub">terminal · 01</div></span>
+  </div>
+  <span class="chip on" id="conn"><span class="dot ok"></span>ONLINE</span>
+</div>
+<div class="k-main">
+  <div>
+    <div id="clock">--:--</div>
+    <div id="date"></div>
+    <div class="scanner" id="scanner">
+      <div class="ring"></div><div class="ring r2"></div><div class="ring sweep"></div>
+      <div class="core"><svg class="i" id="core-icon"><use href="#i-fingerprint"/></svg></div>
+    </div>
+  </div>
+  <div class="stack">
+    <div class="card result" id="result">
+      <div class="label" id="label">Sẵn sàng</div>
+      <div id="headline">Quét thẻ hoặc vân tay</div>
+      <div id="detail"></div>
+    </div>
+    <div class="card">
+      <h2><svg class="i"><use href="#i-activity"/></svg> Gần đây</h2>
+      <ul class="events" id="recent"><li class="faint" style="border:0">—</li></ul>
+    </div>
+  </div>
+</div>
+<script>
+const $ = id => document.getElementById(id);
+const pad = n => String(n).padStart(2, '0');
+let lastId = null, resetTimer = null;
+const recent = [];
+
+function tick() {
+  const d = new Date();
+  $('clock').innerHTML = pad(d.getHours()) + ':' + pad(d.getMinutes()) + '<span class="sec">' + pad(d.getSeconds()) + '</span>';
+  $('date').textContent = d.toLocaleDateString('vi-VN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+}
+
+function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+
+function setState(cls, icon, label, headline, detail) {
+  $('scanner').className = 'scanner ' + cls;
+  $('result').className = 'card result ' + cls;
+  $('core-icon').innerHTML = '<use href="#i-' + icon + '"/>';
+  $('label').textContent = label;
+  $('headline').textContent = headline;
+  $('detail').innerHTML = detail;
+}
+
+function idle() { setState('', 'fingerprint', 'Sẵn sàng', 'Quét thẻ hoặc vân tay', ''); }
+
+function show(e) {
+  const via = e.method === 'rfid' ? 'thẻ RFID' : 'vân tay';
+  if (e.kind === 'scan' && e.type === 'check_in') {
+    const late = e.late_minutes;
+    setState(late ? 'late' : 'ok', 'login', 'Check-in · ' + via, 'Xin chào, ' + e.name + '!',
+      '<b>' + esc(e.time) + '</b>' + (late ? ' · muộn <b>' + late + '′</b>' : '') + (e.ot ? ' · <b>OT</b>' : ''));
+  } else if (e.kind === 'scan' && e.type === 'check_out') {
+    setState('ok', 'logout', 'Check-out · ' + via, 'Tạm biệt, ' + e.name + '!', '<b>' + esc(e.time) + '</b>');
+  } else if (e.kind === 'scan') {
+    setState('', 'clock', 'Đã ghi nhận', e.name, 'Đã chấm công');
+  } else if (e.kind === 'unknown') {
+    setState('bad', 'alert', 'Từ chối', 'Không nhận diện được', (e.method === 'rfid' ? 'Thẻ' : 'Vân tay') + ' chưa đăng ký');
+  } else if (e.kind === 'enrolled') {
+    setState('ok', 'check', 'Đăng ký', 'Đăng ký thành công', esc(e.name) + ' · ' + via);
+  } else return;
+
+  if (e.kind === 'scan' && e.type !== 'duplicate') {
+    recent.unshift(e); recent.length = Math.min(recent.length, 5);
+    $('recent').innerHTML = recent.map(r =>
+      `<li><time>${esc(r.time.slice(0, 5))}</time><span class="ev-ico ${r.type === 'check_out' ? 'out' : r.late_minutes ? 'late' : 'in'}"><svg class="i"><use href="#i-${r.type === 'check_out' ? 'logout' : 'login'}"/></svg></span>` +
+      `<div class="ev-body"><b>${esc(r.name)}</b><small>${esc(r.code)} · ${r.type === 'check_out' ? 'check-out' : 'check-in'}</small></div></li>`).join('');
+  }
+  clearTimeout(resetTimer);
+  resetTimer = setTimeout(idle, 5000);
+}
+
+async function poll() {
+  try {
+    const res = await fetch('{{ url_for("main.api_events") }}?after=' + (lastId || 0));
+    const { events } = await res.json();
+    $('conn').className = 'chip on'; $('conn').innerHTML = '<span class="dot ok"></span>ONLINE';
+    if (lastId === null) {  // lần đầu: chỉ ghi nhận vị trí, không hiện sự kiện cũ
+      lastId = events.length ? events[events.length - 1].id : 0;
+    } else {
+      events.forEach(e => { show(e); lastId = e.id; });
+    }
+  } catch (err) {
+    $('conn').className = 'chip'; $('conn').innerHTML = '<span class="dot bad"></span>MẤT KẾT NỐI';
+  }
+  setTimeout(poll, 600);
+}
+
+try { if (localStorage.getItem('theme') === 'dark') delete document.documentElement.dataset.theme; } catch (e) {}  /* mặc định sáng */
+tick(); setInterval(tick, 1000); poll();
+</script>
+</body>
+</html>

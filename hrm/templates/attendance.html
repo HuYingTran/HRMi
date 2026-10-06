@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon, dept, person, day_status, empty %}
+{% block title %}Bảng công ngày{% endblock %}
+{% block content %}
+{% set present = rows|selectattr('first_in')|list %}
+<div class="page-head">
+  <div><h1>Chấm công {{ day|d }}</h1>
+    <div class="sub mono">{{ present|length }}/{{ rows|length }} có mặt · {{ present|selectattr('late_minutes')|list|length }} muộn</div></div>
+  <form method="get" class="toolbar" style="margin:0">
+    <a class="btn ghost" href="{{ url_for('main.attendance', date=(day.fromordinal(day.toordinal() - 1)).isoformat()) }}">←</a>
+    <input type="date" name="date" value="{{ day.isoformat() }}" onchange="this.form.submit()" style="width:auto">
+    <a class="btn ghost" href="{{ url_for('main.attendance', date=(day.fromordinal(day.toordinal() + 1)).isoformat()) }}">→</a>
+  </form>
+</div>
+
+<div class="card flush table-wrap">
+  <table>
+    <thead><tr><th>Nhân viên</th><th>Phòng ban</th><th>Vào</th><th>Ra</th><th class="num">Muộn</th><th class="num">Về sớm</th><th class="num">Giờ</th><th></th></tr></thead>
+    <tbody>
+    {% for r in rows %}
+      <tr>
+        <td>{{ person(r.employee) }}</td>
+        <td>{{ dept(r.employee.department, r.employee.department_id) }}</td>
+        <td class="mono">{{ r.first_in|hm or '—' }}</td>
+        <td class="mono">{{ r.last_out|hm or '—' }}</td>
+        <td class="num">{{ (r.late_minutes ~ '′') if r.late_minutes else '' }}</td>
+        <td class="num">{{ (r.early_minutes ~ '′') if r.early_minutes else '' }}</td>
+        <td class="num">{{ r.hours|num if r.hours else '' }}</td>
+        <td>{{ day_status(r) }}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="8">{{ empty('Chưa có nhân viên', 'users') }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% if can('attendance.edit') %}
+<section class="card section-gap">
+  <h2>{{ icon('edit') }} Chấm thủ công</h2>
+  <form method="post" action="{{ url_for('main.attendance_manual') }}" class="form-grid">
+    <div class="field"><label>Nhân viên</label>
+      <select name="employee_id" required>
+        {% for r in rows %}<option value="{{ r.employee.id }}">{{ r.employee.code }} · {{ r.employee.full_name }}</option>{% endfor %}
+      </select></div>
+    <div class="field"><label>Ngày</label><input type="date" name="date" value="{{ day.isoformat() }}" required></div>
+    <div class="field"><label>Giờ</label><input type="time" name="time" required></div>
+    <div class="field"><label>Ghi chú</label><input name="note" placeholder="Quên thẻ…"></div>
+    <div style="align-self:end"><button class="btn primary">{{ icon('plus') }} Thêm</button></div>
+  </form>
+</section>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon %}
+{% block title %}Tài khoản{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Tài khoản</h1></div>
+<div class="card" style="max-width:520px">
+  <h2>{{ icon('key') }} Đổi mật khẩu</h2>
+  <form method="post">
+    <div class="field"><label>Mật khẩu hiện tại</label><input type="password" name="current" required></div>
+    <div class="field" style="margin-top:1rem"><label>Mật khẩu mới</label><input type="password" name="new" required minlength="6"></div>
+    <div class="field" style="margin-top:1rem"><label>Nhập lại</label><input type="password" name="confirm" required></div>
+    <div class="actions"><button class="btn primary">{{ icon('check') }} Lưu</button></div>
+  </form>
+</div>
+{% endblock %}

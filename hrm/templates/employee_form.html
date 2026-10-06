@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon %}
+{% block title %}{{ 'Thêm nhân viên' if is_new else 'Sửa hồ sơ' }}{% endblock %}
+{% block content %}
+<div class="page-head" style="max-width:980px;align-items:center">
+  <h1>{{ 'Nhân viên mới' if is_new else emp.full_name }}</h1>
+  <div class="actions" style="margin:0">
+    <a class="btn danger" href="{{ url_for('main.employees') if is_new else url_for('main.employee_detail', emp_id=emp.id) }}">{{ icon('x') }} Huỷ</a>
+    <button class="btn primary" form="emp-form">{{ icon('check') }} {{ 'Tạo' if is_new else 'Lưu' }}</button>
+  </div>
+</div>
+<form method="post" class="card" style="max-width:980px" enctype="multipart/form-data" id="emp-form">
+  <div class="photo-field">
+    <label class="photo-pick" title="Chọn ảnh">
+      {% if emp.photo %}<img id="photo-preview" class="avatar xl" src="{{ url_for('main.photo', name=emp.photo) }}" alt="">
+      {% else %}<img id="photo-preview" class="avatar xl" alt="" hidden><span id="photo-empty" class="avatar xl" style="--h:{{ ((emp.id or 0) * 47) % 360 }}">{{ icon('users', 'lg') }}</span>{% endif %}
+      <span class="photo-badge">{{ icon('edit') }}</span>
+      <input type="file" name="photo" accept="image/*" id="photo-input" hidden>
+    </label>
+    <div>
+      <b>Ảnh</b>
+      <div class="hint">JPG/PNG, tối đa 8 MB</div>
+      {% if emp.photo %}<label style="margin-top:.4rem;display:block"><input type="checkbox" name="remove_photo" value="1">Xoá ảnh</label>{% endif %}
+    </div>
+  </div>
+
+  <h2>{{ icon('users') }} Cá nhân</h2>
+  <div class="form-grid">
+    <div class="field"><label>Mã NV *</label><input name="code" value="{{ emp.code or '' }}" required class="mono" placeholder="NV001"></div>
+    <div class="field"><label>Họ và tên *</label><input name="full_name" value="{{ emp.full_name or '' }}" required></div>
+    <div class="field"><label>Giới tính</label>
+      <select name="gender">
+        <option value=""></option>
+        {% for g_ in ['Nam', 'Nữ', 'Khác'] %}<option {{ 'selected' if emp.gender == g_ }}>{{ g_ }}</option>{% endfor %}
+      </select></div>
+    <div class="field"><label>Ngày sinh</label><input type="date" name="dob" value="{{ emp.dob or '' }}"></div>
+    <div class="field"><label>SĐT</label><input name="phone" value="{{ emp.phone or '' }}" class="mono"></div>
+    <div class="field"><label>Email</label><input type="email" name="email" value="{{ emp.email or '' }}"></div>
+    <div class="field wide"><label>Địa chỉ</label><input name="address" value="{{ emp.address or '' }}"></div>
+  </div>
+
+  <div class="form-section">
+    <h2>{{ icon('building') }} Công việc</h2>
+    <div class="form-grid">
+      <div class="field"><label>Phòng ban</label>
+        <select name="department_id">
+          <option value="">— Chưa phân —</option>
+          {% for d in departments %}<option value="{{ d.id }}" {{ 'selected' if emp.department_id == d.id }}>{{ d.name }}</option>{% endfor %}
+        </select>
+        {% if not departments %}<a class="hint" href="{{ url_for('main.departments') }}">+ Tạo phòng ban</a>{% endif %}
+      </div>
+      <div class="field"><label>Chức vụ</label><input name="position" value="{{ emp.position or '' }}"></div>
+      <div class="field"><label>Ngày vào làm</label><input type="date" name="hire_date" value="{{ emp.hire_date or '' }}"></div>
+      <div class="field"><label>Phép năm (ngày)</label><input type="number" step="0.5" min="0" name="annual_leave_days" value="{{ emp.annual_leave_days|num }}" class="mono"></div>
+      <div class="field"><label>Trạng thái</label>
+        <select name="status">
+          <option value="active" {{ 'selected' if emp.status == 'active' }}>Đang làm</option>
+          <option value="inactive" {{ 'selected' if emp.status == 'inactive' }}>Đã nghỉ</option>
+        </select></div>
+    </div>
+  </div>
+
+  <div class="form-section">
+    <h2>{{ icon('card') }} Thẻ RFID</h2>
+    <div class="form-grid">
+      <div class="field"><label>UID</label>
+        <input name="rfid_uid" value="{{ emp.rfid_uid or '' }}" class="mono" placeholder="Để trống rồi quét ở trang hồ sơ"></div>
+    </div>
+  </div>
+
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.getElementById('photo-input').addEventListener('change', ev => {
+  const file = ev.target.files[0];
+  if (!file) return;
+  const img = document.getElementById('photo-preview');
+  img.src = URL.createObjectURL(file);
+  img.hidden = false;
+  const empty = document.getElementById('photo-empty');
+  if (empty) empty.hidden = true;
+});
+</script>
+{% endblock %}

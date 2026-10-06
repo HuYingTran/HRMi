@@ -1,0 +1,77 @@
+{% macro icon(name, cls='') -%}
+  <svg class="i {{ cls }}" aria-hidden="true"><use href="#i-{{ name }}"/></svg>
+{%- endmacro %}
+
+{% macro avatar(emp, cls='') -%}
+  {%- set state = presence_of(emp.id) -%}
+  <span class="av {{ cls }}">
+  {%- if emp.photo -%}
+  <img class="avatar {{ cls }}" src="{{ url_for('main.photo', name=emp.photo) }}" alt="{{ emp.full_name }}" loading="lazy">
+  {%- else -%}
+  <span class="avatar {{ cls }}" style="--h:{{ (emp.id * 47) % 360 }}">{{ emp.full_name|initials }}</span>
+  {%- endif -%}
+  <i class="presence {{ state }}" title="{{ PRESENCE[state] }}"></i>
+  </span>
+{%- endmacro %}
+
+{% macro dept_color(id) -%}
+  --dc:var(--cat-{{ ((id or 1) - 1) % 8 + 1 }})
+{%- endmacro %}
+
+{% macro dept(name, id) -%}
+  {%- if name -%}<span class="dept" style="{{ dept_color(id) }}">{{ name }}</span>
+  {%- else -%}<span class="faint">—</span>{%- endif -%}
+{%- endmacro %}
+
+{% macro person(emp, sub=None, link=True) -%}
+  <div class="person">
+    {{ avatar(emp) }}
+    <div class="meta">
+      {% if link %}<a href="{{ url_for('main.employee_detail', emp_id=emp.id) }}">{{ emp.full_name }}</a>{% else %}<b>{{ emp.full_name }}</b>{% endif %}
+      <small>{{ sub if sub is not none else emp.code }}</small>
+    </div>
+  </div>
+{%- endmacro %}
+
+{% macro event_item(e, with_seconds=False) -%}
+  {%- set via = 'Thẻ RFID' if e.method == 'rfid' else 'Vân tay' -%}
+  <li>
+    <time>{{ e.at[11:19] if with_seconds else e.at[11:16] }}</time>
+    {%- if e.kind == 'scan' and e.type == 'check_in' %}
+      <span class="ev-ico {{ 'late' if e.late_minutes else 'in' }}">{{ icon('login') }}</span>
+      <div class="ev-body"><b>{{ e.name }}</b> check-in
+        {%- if e.late_minutes %} <span class="badge late">muộn {{ e.late_minutes }}′</span>{% endif %}
+        {%- if e.ot %} <span class="badge ot">OT</span>{% endif %}
+        <small>{{ e.code }} · {{ via }}</small></div>
+    {%- elif e.kind == 'scan' and e.type == 'check_out' %}
+      <span class="ev-ico out">{{ icon('logout') }}</span>
+      <div class="ev-body"><b>{{ e.name }}</b> check-out<small>{{ e.code }} · {{ via }}</small></div>
+    {%- elif e.kind == 'scan' %}
+      <span class="ev-ico">{{ icon('clock') }}</span>
+      <div class="ev-body"><b>{{ e.name }}</b> quét lặp lại, bỏ qua<small>{{ e.code }} · {{ via }}</small></div>
+    {%- elif e.kind == 'unknown' %}
+      <span class="ev-ico unk">{{ icon('alert') }}</span>
+      <div class="ev-body">Không nhận diện được
+        <small>{% if e.method == 'rfid' %}Thẻ <span class="mono">{{ e.uid }}</span>{% else %}Vân tay chưa đăng ký{% endif %}</small></div>
+    {%- elif e.kind == 'enrolled' %}
+      <span class="ev-ico in">{{ icon('check') }}</span>
+      <div class="ev-body">Đăng ký {{ 'thẻ' if e.method == 'rfid' else 'vân tay' }} cho <b>{{ e.name }}</b><small>{{ e.code }}</small></div>
+    {%- endif %}
+  </li>
+{%- endmacro %}
+
+{% macro day_status(info) -%}
+  <span class="badge {{ info.status }}">{{ DAY_STATUSES[info.status] }}</span>
+  {%- if info.leave and info.status not in ('leave', 'business') %} <span class="badge {{ 'business' if info.leave.leave_type == 'business' else 'leave' }} plain">{{ LEAVE_TYPES[info.leave.leave_type] }}{% if info.leave.half_day %} ½{% endif %}</span>{% endif %}
+  {%- if info.status == 'leave' %} <span class="faint">{{ LEAVE_TYPES[info.leave.leave_type] }}{% if info.leave.half_day %} · ½ ngày{% endif %}</span>{% endif %}
+{%- endmacro %}
+
+{% macro empty(text, ico='inbox') -%}
+  <div class="empty">{{ icon(ico) }}<div>{{ text }}</div></div>
+{%- endmacro %}
+
+{% macro presence_legend() -%}
+  <div class="legend presence-legend">
+    {% for key, label in PRESENCE.items() %}<span><i class="presence {{ key }}"></i>{{ label }}</span>{% endfor %}
+  </div>
+{%- endmacro %}

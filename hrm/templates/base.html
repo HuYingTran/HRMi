@@ -1,0 +1,107 @@
+{% from "_macros.html" import icon, avatar %}<!doctype html>
+<html lang="vi" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Mini HRM{% endblock %} · HRMi</title>
+  <script>try { if (localStorage.getItem('theme') === 'dark') delete document.documentElement.dataset.theme; } catch (e) {}  /* mặc định sáng */</script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+{% include "_icons.html" %}
+{% if g.user %}
+{% set ep = request.endpoint or '' %}
+<div class="app">
+  <aside class="sidebar">
+    <a class="brand" href="{{ url_for('main.dashboard' if is_admin else 'main.my_timesheet') }}">
+      <span class="brand-mark">{{ icon('logo', 'lg') }}</span>
+      <span><div class="brand-name">HRMi</div><div class="brand-sub">mini · hrm</div></span>
+    </a>
+    <nav class="nav">
+      {% if is_admin %}
+      <a href="{{ url_for('main.dashboard') }}" class="{{ 'active' if ep == 'main.dashboard' }}">{{ icon('grid') }}<span class="lbl">Tổng quan</span></a>
+      <a href="{{ url_for('main.employees') }}" class="{{ 'active' if ep.startswith('main.employee') }}">{{ icon('users') }}<span class="lbl">Nhân viên</span></a>
+      <a href="{{ url_for('main.departments') }}" class="{{ 'active' if ep.startswith('main.department') }}">{{ icon('building') }}<span class="lbl">Phòng ban</span></a>
+      <a href="{{ url_for('main.attendance') }}" class="{{ 'active' if ep == 'main.attendance' }}">{{ icon('clock') }}<span class="lbl">Chấm công</span></a>
+      <a href="{{ url_for('main.report') }}" class="{{ 'active' if ep == 'main.report' }}">{{ icon('chart') }}<span class="lbl">Báo cáo</span></a>
+      <a href="{{ url_for('main.timesheets') }}" class="{{ 'active' if ep.startswith('main.timesheet') }}">{{ icon('clipboard-check') }}<span class="lbl">Chốt công</span>{% if nav_review %}<span class="count">{{ nav_review }}</span>{% endif %}</a>
+      <a href="{{ url_for('main.leaves') }}" class="{{ 'active' if ep.startswith('main.leave') }}">{{ icon('umbrella') }}<span class="lbl">Nghỉ phép</span>{% if nav_pending %}<span class="count">{{ nav_pending }}</span>{% endif %}</a>
+      <a href="{{ url_for('main.permissions_page') }}" class="{{ 'active' if ep == 'main.permissions_page' }}">{{ icon('key') }}<span class="lbl">Phân quyền</span></a>
+      <a href="{{ url_for('main.device') }}" class="{{ 'active' if ep == 'main.device' }}">{{ icon('cpu') }}<span class="lbl">Thiết bị</span></a>
+      <a href="{{ url_for('main.kiosk') }}" target="_blank">{{ icon('monitor') }}<span class="lbl">Kiosk ↗</span></a>
+      {% else %}
+      {% set mine_ts = ep == 'main.my_timesheet' or (ep.startswith('main.timesheet_') and request.view_args.emp_id == g.user.employee_id) %}
+      <a href="{{ url_for('main.my_timesheet') }}" class="{{ 'active' if mine_ts }}">{{ icon('clipboard-check') }}<span class="lbl">Bảng công của tôi</span>{% if nav_mine %}<span class="count">{{ nav_mine }}</span>{% endif %}</a>
+      {% if can('self.leave') or can('leaves.approve') %}
+      <a href="{{ url_for('main.leaves', status='all' if not can('leaves.approve') else 'pending') }}" class="{{ 'active' if ep.startswith('main.leave') }}">{{ icon('umbrella') }}<span class="lbl">{{ 'Nghỉ phép' if can('leaves.approve') else 'Đơn nghỉ của tôi' }}</span>{% if nav_pending %}<span class="count">{{ nav_pending }}</span>{% endif %}</a>
+      {% endif %}
+      {% if is_manager %}<div class="nav-label">Nhóm của tôi</div>{% endif %}
+      {% if can('timesheets.review') %}
+      <a href="{{ url_for('main.timesheets') }}" class="{{ 'active' if ep == 'main.timesheets' or (ep.startswith('main.timesheet_') and not mine_ts) }}">{{ icon('users') }}<span class="lbl">Duyệt bảng công</span>{% if nav_review %}<span class="count">{{ nav_review }}</span>{% endif %}</a>
+      {% endif %}
+      {% if can('employees.view') %}
+      <a href="{{ url_for('main.employees') }}" class="{{ 'active' if ep.startswith('main.employee') }}">{{ icon('users') }}<span class="lbl">Nhân viên</span></a>
+      {% endif %}
+      {% if can('attendance.view') %}
+      <a href="{{ url_for('main.attendance') }}" class="{{ 'active' if ep == 'main.attendance' }}">{{ icon('clock') }}<span class="lbl">Chấm công</span></a>
+      <a href="{{ url_for('main.report') }}" class="{{ 'active' if ep == 'main.report' }}">{{ icon('chart') }}<span class="lbl">Báo cáo</span></a>
+      {% endif %}
+      {% endif %}
+    </nav>
+    <div class="sidebar-foot">
+      <div class="clock-row">
+        <span class="clock" id="clock"></span>
+        <button class="icon-btn" id="theme" title="Đổi giao diện sáng/tối">
+          <svg class="i sun"><use href="#i-sun"/></svg><svg class="i moon"><use href="#i-moon"/></svg>
+        </button>
+      </div>
+      {% if is_admin %}
+      <div class="device-mini">
+        <div><span class="dot {{ 'ok' if nav_hw.rfid else 'bad' }}"></span> RFID</div>
+        <div><span class="dot {{ 'ok' if nav_hw.fingerprint else 'bad' }}"></span> Vân tay</div>
+      </div>
+      {% endif %}
+      <div class="user-row {{ 'active' if ep == 'main.my_profile' }}">
+        {% if g.employee %}<a href="{{ url_for('main.my_profile') }}" title="Hồ sơ của tôi">{{ avatar(g.employee) }}</a>{% else %}<span class="avatar" style="--h:190">{{ g.user.username[:2]|upper }}</span>{% endif %}
+        <div class="who"><a href="{{ url_for('main.my_profile') }}" title="Hồ sơ của tôi">{{ g.employee.full_name if g.employee else g.user.username }}</a>
+          <small>{{ 'Quản trị' if is_admin else g.user.username }}</small></div>
+        <form class="inline" method="post" action="{{ url_for('main.logout') }}">
+          <button class="icon-btn" title="Đăng xuất">{{ icon('logout') }}</button>
+        </form>
+      </div>
+    </div>
+  </aside>
+  <div class="content">
+    <main>
+      {% for category, message in get_flashed_messages(with_categories=true) %}
+        <div class="flash {{ category }}">{{ icon('check' if category == 'success' else 'alert') }}<span>{{ message }}</span></div>
+      {% endfor %}
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+</div>
+<script>
+(function () {
+  const el = document.getElementById('clock');
+  const days = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
+  const pad = n => String(n).padStart(2, '0');
+  function tick() {
+    const d = new Date();
+    el.innerHTML = days[d.getDay()] + ' ' + pad(d.getDate()) + '/' + pad(d.getMonth() + 1) +
+      ' · <b>' + pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds()) + '</b>';
+  }
+  tick(); setInterval(tick, 1000);
+  document.getElementById('theme').addEventListener('click', () => {
+    const root = document.documentElement;
+    const light = root.dataset.theme !== 'light';
+    if (light) root.dataset.theme = 'light'; else delete root.dataset.theme;
+    try { localStorage.setItem('theme', light ? 'light' : 'dark'); } catch (e) {}
+  });
+})();
+</script>
+{% else %}
+{% block bare %}{% endblock %}
+{% endif %}
+{% block scripts %}{% endblock %}
+</body>
+</html>

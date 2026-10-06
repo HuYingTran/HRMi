@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon %}
+{% block title %}Đăng nhập{% endblock %}
+{% block bare %}
+<div class="login-wrap">
+  <div class="card login">
+    <div class="brand">
+      <span class="brand-mark">{{ icon('logo', 'lg') }}</span>
+      <span><div class="brand-name">HRMi</div><div class="brand-sub">mini · hrm</div></span>
+    </div>
+    <h1 style="margin-bottom:1.5rem">Đăng nhập</h1>
+    {% for category, message in get_flashed_messages(with_categories=true) %}
+      <div class="flash {{ category }}">{{ icon('alert') }}<span>{{ message }}</span></div>
+    {% endfor %}
+    <form method="post">
+      <div class="field"><label for="username">Tài khoản</label>
+        <input id="username" name="username" autofocus required autocomplete="username"></div>
+      <div class="field" style="margin-top:1rem"><label for="password">Mật khẩu</label>
+        <input id="password" name="password" type="password" required autocomplete="current-password"></div>
+      <button class="btn primary" style="width:100%;margin-top:1.5rem">{{ icon('login') }} Đăng nhập</button>
+    </form>
+  </div>
+</div>
+{% endblock %}
