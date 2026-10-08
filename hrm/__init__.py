@@ -1,11 +1,12 @@
 """Mini HRM: hồ sơ nhân viên, chấm công RFID/vân tay, nghỉ phép."""
 import logging
 import secrets
+from datetime import date
 
 from flask import Flask
 from werkzeug.security import generate_password_hash
 
-from . import db, services
+from . import day_requests, db, profiles, services, workrules
 from .config import INSTANCE_DIR, Config
 
 log = logging.getLogger(__name__)
@@ -48,13 +49,18 @@ def create_app(config=None, start_hardware=True):
     app.extensions["hardware"] = HardwareManager(app.config)
     if start_hardware:
         app.extensions["hardware"].start()
+        # luồng gửi email chạy cùng tiến trình với phần cứng (tiến trình con khi tự nạp lại)
+        from .notify import Mailer
+        app.extensions["mailer"] = Mailer(app.config["DATABASE"])
+        app.extensions["mailer"].start()
 
     from .views import bp, presence_of
-    from . import views_timesheet  # noqa: F401  (đăng ký thêm route bảng công vào bp)
+    from . import views_timesheet, views_rules, views_profile, views_assistant  # noqa: F401  (đăng ký thêm route vào bp)
     app.register_blueprint(bp)
     app.jinja_env.globals["presence_of"] = presence_of
     from . import permissions
     app.jinja_env.globals["can"] = permissions.can
+    app.jinja_env.globals["can_sensitive"] = permissions.can_sensitive
 
     @app.template_filter("hm")
     def _hm(value):
@@ -70,11 +76,19 @@ def create_app(config=None, start_hardware=True):
             return "/".join(reversed(value)) if len(value) == 3 else "-".join(value)
         return value.strftime("%d/%m/%Y")
 
+    @app.template_filter("todate")
+    def _todate(value):
+        return date.fromisoformat(value[:10]) if isinstance(value, str) else value
+
     @app.template_filter("initials")
     def _initials(name):
         """Chữ cái đầu của họ và tên: 'Nguyễn Văn An' -> 'NA'."""
         parts = (name or "?").split()
         return (parts[0][0] + (parts[-1][0] if len(parts) > 1 else "")).upper()
+
+    @app.template_filter("money")
+    def _money(value):
+        return profiles.money(value)
 
     @app.template_filter("num")
     def _num(value):
@@ -85,5 +99,7 @@ def create_app(config=None, start_hardware=True):
         LEAVE_STATUSES=services.LEAVE_STATUSES,
         DAY_STATUSES=services.DAY_STATUSES,
         PRESENCE=services.PRESENCE,
+        REQ_TYPES=day_requests.REQ_TYPES,
+        OT_KINDS=workrules.OT_KINDS,
     )
     return app

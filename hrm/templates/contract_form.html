@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon, avatar %}
+{% block title %}{{ 'Sửa hợp đồng' if contract else 'Hợp đồng mới' }}{% endblock %}
+{% block content %}
+<div class="page-head" style="max-width:980px;align-items:center">
+  <div style="display:flex;gap:.8rem;align-items:center">{{ avatar(emp, 'md') }}
+    <div><h1>{{ 'Sửa hợp đồng ' ~ (contract.number or '') if contract else 'Hợp đồng mới' }}</h1>
+      <div class="sub">{{ emp.full_name }} · {{ emp.code }}</div></div></div>
+  <div class="actions" style="margin:0">
+    <a class="btn danger" href="{{ url_for('main.employee_detail', emp_id=emp.id) }}#contracts">{{ icon('x') }} Huỷ</a>
+    <button class="btn primary" form="contract-form">{{ icon('check') }} Lưu</button>
+  </div>
+</div>
+<form method="post" class="card accent" style="max-width:980px" id="contract-form" enctype="multipart/form-data">
+  <div class="form-grid">
+    <div class="field"><label>Loại hợp đồng *</label>
+      <select name="type" id="ctype">{% for k, v in P.CONTRACT_TYPES.items() %}<option value="{{ k }}" {{ 'selected' if form.type == k }}>{{ v }}</option>{% endfor %}</select>
+      <span class="hint" id="type-hint"></span></div>
+    <div class="field"><label>Số hợp đồng</label><input name="number" value="{{ form.number or '' }}" class="mono" maxlength="40" placeholder="Để trống: tự đánh số"></div>
+    <div class="field"><label>Ngày ký</label><input type="date" name="sign_date" value="{{ form.sign_date or '' }}"></div>
+    <div class="field"><label>Từ ngày *</label><input type="date" name="start_date" value="{{ form.start_date or '' }}" required id="cstart"></div>
+    <div class="field" id="end-field"><label>Đến ngày *</label><input type="date" name="end_date" value="{{ form.end_date or '' }}" id="cend">
+      <span class="hint" id="quick-end"></span></div>
+    <div class="field"><label>Chức danh</label><input name="position" value="{{ form.position or '' }}" maxlength="100"></div>
+  </div>
+
+  <div class="form-section">
+    <h2>{{ icon('lock') }} Lương & phụ cấp</h2>
+    <div class="form-grid">
+      <div class="field"><label>Mức lương (đồng/tháng) *</label><input name="salary" value="{{ form.salary or '' }}" required class="mono money" inputmode="numeric" placeholder="10.000.000"></div>
+      <div class="field"><label>Lương đóng BHXH</label><input name="insurance_salary" value="{{ form.insurance_salary or '' }}" class="mono money" inputmode="numeric" placeholder="Để trống: bằng mức lương"></div>
+      <div class="field wide"><label>Phụ cấp (mỗi dòng: tên: số tiền/tháng)</label>
+        <textarea name="allowances" rows="3" class="mono" placeholder="Ăn trưa: 730.000&#10;Xăng xe: 500.000">{{ form.allowances or '' }}</textarea></div>
+    </div>
+  </div>
+
+  <div class="form-section">
+    <div class="form-grid">
+      <div class="field wide"><label>Ghi chú</label><input name="note" value="{{ form.note or '' }}" maxlength="500"></div>
+      <div class="field wide"><label>Bản hợp đồng đã ký (PDF / ảnh, tuỳ chọn)</label><input type="file" name="file" accept=".pdf,image/*">
+        {% if contract and contract.document_id %}<span class="hint">Đã có: <a href="{{ url_for('main.document_download', doc_id=contract.document_id) }}" target="_blank">{{ contract.document_name }}</a>. Tải file mới để thay.</span>{% endif %}</div>
+    </div>
+  </div>
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  const type = document.getElementById('ctype');
+  const start = document.getElementById('cstart');
+  const end = document.getElementById('cend');
+  const endField = document.getElementById('end-field');
+  const hint = document.getElementById('type-hint');
+  const quick = document.getElementById('quick-end');
+  const HINTS = {
+    probation: 'Tối đa 180 ngày (quản lý DN), 60 ngày (cao đẳng trở lên), 30 ngày (trung cấp), 6 ngày làm việc (khác).',
+    fixed: 'Tối đa 36 tháng; chỉ ký thêm 1 lần, sau đó phải ký không xác định thời hạn.',
+    indefinite: '',
+    seasonal: '',
+  };
+  const PRESETS = { probation: [[1, 'tháng'], [2, 'tháng']], fixed: [[12, 'tháng'], [24, 'tháng'], [36, 'tháng']], seasonal: [[3, 'tháng'], [6, 'tháng']] };
+  function addMonths(iso, n) {
+    const d = new Date(iso + 'T00:00:00');
+    d.setMonth(d.getMonth() + n);
+    d.setDate(d.getDate() - 1);
+    const pad = x => String(x).padStart(2, '0');  // không dùng toISOString: lệch ngày theo múi giờ
+    return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+  }
+  function sync() {
+    const t = type.value;
+    endField.hidden = t === 'indefinite';
+    end.required = t !== 'indefinite';
+    hint.textContent = HINTS[t];
+    quick.innerHTML = '';
+    (PRESETS[t] || []).forEach(([n, unit]) => {
+      const a = document.createElement('a');
+      a.href = '#'; a.textContent = n + ' ' + unit; a.style.marginRight = '.6rem';
+      a.onclick = ev => { ev.preventDefault(); if (start.value) end.value = addMonths(start.value, n); };
+      quick.appendChild(a);
+    });
+  }
+  type.addEventListener('change', sync);
+  sync();
+  // định dạng số tiền khi rời ô: 10000000 -> 10.000.000
+  document.querySelectorAll('input.money').forEach(el => el.addEventListener('blur', () => {
+    const n = el.value.replace(/[^\d]/g, '');
+    if (n) el.value = Number(n).toLocaleString('vi-VN');
+  }));
+})();
+</script>
+{% endblock %}

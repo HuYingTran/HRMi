@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon, avatar %}
+{% block title %}Nghỉ việc · {{ emp.full_name }}{% endblock %}
+{% block content %}
+{% macro check(name, label, hint='', default=True, disabled=False) -%}
+  {%- set posted = form|length > 0 -%}
+  <label style="display:flex;gap:.5rem;align-items:flex-start;{{ 'opacity:.55' if disabled }}">
+    <input type="checkbox" name="{{ name }}" value="1" {{ 'checked' if (form.get(name) if posted else default) and not disabled }} {{ 'disabled' if disabled }}>
+    <span>{{ label }}{% if hint %}<span class="hint" style="display:block">{{ hint }}</span>{% endif %}</span>
+  </label>
+{%- endmacro %}
+<div class="page-head" style="max-width:860px;align-items:center">
+  <div style="display:flex;gap:.8rem;align-items:center">{{ avatar(emp, 'md') }}
+    <div><h1>Thủ tục nghỉ việc</h1><div class="sub">{{ emp.full_name }} · {{ emp.code }}{% if emp.hire_date %} · vào làm {{ emp.hire_date|d }}{% endif %}</div></div></div>
+  <div class="actions" style="margin:0">
+    <a class="btn" href="{{ url_for('main.employee_detail', emp_id=emp.id) }}#history">{{ icon('x') }} Huỷ</a>
+    <button class="btn danger" form="offboard-form" onclick="return confirm('Xác nhận {{ emp.full_name }} nghỉ việc?')">{{ icon('check') }} Xác nhận nghỉ việc</button>
+  </div>
+</div>
+
+<form method="post" class="card accent" style="max-width:860px" id="offboard-form">
+  <div class="form-grid">
+    <div class="field"><label>Ngày nghỉ việc (ngày làm việc cuối) *</label>
+      <input type="date" name="termination_date" value="{{ form.get('termination_date', today.isoformat()) }}" max="{{ today.isoformat() }}" required></div>
+    <div class="field"><label>Lý do *</label>
+      <select name="reason" required><option value=""></option>
+        {% for k, v in P.TERMINATION_REASONS.items() %}<option value="{{ k }}" {{ 'selected' if form.get('reason') == k }}>{{ v }}</option>{% endfor %}</select></div>
+    <div class="field"><label>Số quyết định</label><input name="decision_no" value="{{ form.get('decision_no', '') }}" maxlength="60" class="mono"></div>
+    <div class="field wide"><label>Ghi chú</label><input name="note" value="{{ form.get('note', '') }}" maxlength="500"></div>
+  </div>
+
+  <div class="form-section">
+    <h2>{{ icon('cpu') }} Hệ thống tự làm</h2>
+    <div class="form-grid">
+      {{ check('revoke_rfid', 'Thu hồi thẻ RFID', ('Thẻ ' ~ emp.rfid_uid) if emp.rfid_uid else 'Chưa gán thẻ', disabled=not emp.rfid_uid) }}
+      {{ check('delete_fingerprint', 'Xoá vân tay trên cảm biến', ('Mẫu #' ~ emp.fingerprint_id) if emp.fingerprint_id is not none else 'Chưa đăng ký vân tay', disabled=emp.fingerprint_id is none) }}
+      {{ check('end_contracts', 'Chấm dứt hợp đồng đang hiệu lực',
+               (info.open_contracts|map(attribute='number')|join(', ')) if info.open_contracts else 'Không có hợp đồng còn hiệu lực',
+               disabled=not info.open_contracts) }}
+      {% set n_pending = info.pending_leaves + info.pending_requests %}
+      {{ check('cancel_pending', 'Huỷ đơn đang chờ duyệt', (n_pending ~ ' đơn') if n_pending else 'Không có đơn chờ duyệt', disabled=not n_pending) }}
+      {% if info.account %}
+      {{ check('delete_account', 'Xoá tài khoản đăng nhập ' ~ info.account.username, 'Không chọn: tài khoản vẫn còn nhưng bị khoá (người đã nghỉ không đăng nhập được).', default=False) }}
+      {% endif %}
+    </div>
+    {% if info.managed %}<p class="flash warning" style="margin-top:.8rem">Đang là trưởng phòng {{ info.managed|map(attribute='name')|join(', ') }}: vị trí này sẽ bị bỏ trống.</p>{% endif %}
+  </div>
+
+  <div class="form-section">
+    <h2>{{ icon('clipboard-check') }} Bàn giao <span class="hint" style="font-weight:400">· đánh dấu việc đã xong, ghi vào quá trình công tác</span></h2>
+    <div class="form-grid">
+      {% for k, v in P.HANDOVER.items() %}{{ check('handover_' ~ k, v, default=False) }}{% endfor %}
+    </div>
+    <p class="hint" style="margin-bottom:0">{{ icon('umbrella') }} Phép năm {{ today.year }} còn lại: <b>{{ balance.remaining|round(2)|num }}</b> ngày
+      (định mức tính theo tỉ lệ tới ngày nghỉ việc nếu bật "phép theo tỉ lệ").
+      Bảng công tháng cuối vẫn chốt bình thường ở trang Chốt công.</p>
+  </div>
+</form>
+{% endblock %}

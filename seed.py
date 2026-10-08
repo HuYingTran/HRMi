@@ -12,6 +12,8 @@ Mã thẻ RFID và vị trí vân tay là giả: khi dùng phần cứng thật 
 "Quét thẻ" / "Đăng ký vân tay" cho từng người, hoặc tạo CSDL mới.
 """
 import argparse
+import calendar
+import json
 import random
 from datetime import date, datetime, time, timedelta
 from pathlib import Path
@@ -225,6 +227,163 @@ def demo_workflow(conn, rng, month):
     return ", ".join(f"{v} {k}" for k, v in counts.items())
 
 
+def _plus_months(d, n):
+    """Ngày cuối của khoảng n tháng tính từ d (vd. 01/03 + 2 tháng -> 30/04)."""
+    m = d.month - 1 + n
+    y, m = d.year + m // 12, m % 12 + 1
+    return date(y, m, min(d.day, calendar.monthrange(y, m)[1])) - timedelta(days=1)
+
+
+def add_contracts(conn, rng):
+    """Hợp đồng mẫu: thử việc 2 tháng -> 12 tháng -> 24 tháng -> không thời hạn, tới hôm nay.
+    Vài người để hợp đồng sắp hết hạn để có nhắc việc trên Tổng quan."""
+    today = date.today()
+    n = 0
+    rows = conn.execute("SELECT id, code, position, hire_date, status, termination_date FROM employees "
+                        "WHERE hire_date IS NOT NULL AND id NOT IN (SELECT employee_id FROM contracts) "
+                        "ORDER BY id").fetchall()
+    for i, emp in enumerate(rows):
+        if i == len(rows) - 1:
+            continue  # người cuối chưa có hợp đồng
+        base = rng.choice([8, 9, 10, 11, 12, 14, 15]) * 1_000_000
+        if emp["position"] and emp["position"].startswith(("Trưởng", "Giám đốc")):
+            base = rng.choice([22, 25, 30]) * 1_000_000
+        allowances = json.dumps([{"name": "Ăn trưa", "amount": 730000}], ensure_ascii=False)
+        salaries = [round(base * 0.85, -5), base, round(base * 1.08, -5), round(base * 1.15, -5)]
+        start = date.fromisoformat(emp["hire_date"])
+        left = emp["termination_date"] and date.fromisoformat(emp["termination_date"])
+        expiring = i % 7 == 3  # để hợp đồng hiện tại sắp hết hạn, chưa ký tiếp
+        plan = [("probation", 2), ("fixed", 12), ("fixed", 24), ("indefinite", 0)]
+        for (ctype, months), salary in zip(plan, salaries):
+            end = _plus_months(start, months) if months else None
+            last = end is None or end >= (left or today)
+            if expiring and end and end >= today:
+                end = today + timedelta(days=rng.randint(5, 28))
+            terminated = bool(left) and last
+            n += 1
+            conn.execute(
+                "INSERT INTO contracts (employee_id, number, type, sign_date, start_date, end_date, position, "
+                "salary, insurance_salary, allowances, status, terminated_on) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (emp["id"], f"{n:03d}/{start.year}/{'HĐTV' if ctype == 'probation' else 'HĐLĐ'}", ctype,
+                 start.isoformat(), start.isoformat(), end and end.isoformat(), emp["position"], salary, salary,
+                 allowances, "terminated" if terminated else "signed", left.isoformat() if terminated else None))
+            if last:
+                break
+            start = end + timedelta(days=1)
+    conn.commit()
+    return n
+
+
+def demo_workflow(conn, rng, month):
+    """Mô phỏng quy trình xác nhận bảng công của một tháng đã kết thúc (chỉ thêm dữ liệu)."""
+    existing = {r[0] for r in conn.execute("SELECT employee_id FROM timesheets WHERE month = ?", (month,))}
+    first = services.parse_month(month)
+    rows = services.monthly_report(conn, first.year, first.month, CFG)
+    # không đụng tới bảng công đã có (do người dùng thao tác)
+    rows = [r for r in rows if r["employee"]["status"] == "active" and r["employee"]["id"] not in existing]
+    if not rows:
+        return "mọi nhân viên đã có bảng công tháng này, bỏ qua"
+    timesheet.send(conn, [r["employee"]["id"] for r in rows], month)
+    admin = conn.execute("SELECT * FROM users WHERE role = 'admin' ORDER BY id").fetchone()
+
+    def reviewer(emp):
+        rid = timesheet.reviewer_id(conn, emp)
+        u = conn.execute("SELECT * FROM users WHERE employee_id = ?", (rid,)).fetchone() if rid else None
+        return u or admin
+
+    with_issues = [r for r in rows if services.issues_of(r) or r["late"]]
+    clean = [r for r in rows if r not in with_issues]
+    rng.shuffle(with_issues)
+    rng.shuffle(clean)
+    counts = {"giải trình + chờ duyệt": 0, "đã chốt": 0, "bị trả lại": 0, "chưa xác nhận": 0}
+    for i, r in enumerate(with_issues):
+        emp = r["employee"]
+        if i >= 7:
+            counts["chưa xác nhận"] += 1
+            continue
+        ts = timesheet.get(conn, emp["id"], month)
+        for d in timesheet.detail(conn, emp["id"], month, CFG)["flagged"]:
+            reason = rng.choice(EXPLAIN[d["status"]])
+            p_in = p_out = None
+            if d["status"] == "missing_out":
+                p_out = f"17:{rng.randint(5, 45):02d}"
+            elif d["status"] == "absent" and "quên làm đơn" not in reason and "công tác" not in reason:
+                p_in, p_out = "08:00", "17:00"
+            timesheet.explain(conn, ts, d["date"].isoformat(), reason, p_in, p_out)
+        timesheet.submit(conn, ts, rng.choice([None, "Nhờ anh/chị xem giúp các ngày giải trình."]))
+        ts = timesheet.get(conn, emp["id"], month)
+        if i < 3:  # cấp trên đã xử lý và chốt
+            for day in timesheet.explanations(conn, ts["id"]):
+                timesheet.review_explanation(conn, ts, day, True, "Đồng ý", CFG)
+            timesheet.confirm(conn, emp["id"], month, reviewer(emp), CFG)
+            counts["đã chốt"] += 1
+        elif i == 3:
+            timesheet.return_to_employee(conn, ts, "Cần bổ sung minh chứng cho các ngày giải trình, gửi lại giúp anh/chị.")
+            counts["bị trả lại"] += 1
+        else:
+            counts["giải trình + chờ duyệt"] += 1
+    for i, r in enumerate(clean):
+        ts = timesheet.get(conn, r["employee"]["id"], month)
+        if i % 2 == 0:
+            timesheet.submit(conn, ts)  # xác nhận đúng, không cần giải trình
+            counts["giải trình + chờ duyệt"] += 1
+        else:
+            counts["chưa xác nhận"] += 1
+    return ", ".join(f"{v} {k}" for k, v in counts.items())
+
+
+def _plus_months(d, n):
+    """Ngày cuối của khoảng n tháng tính từ d (vd. 01/03 + 2 tháng -> 30/04)."""
+    m = d.month - 1 + n
+    y, m = d.year + m // 12, m % 12 + 1
+    return date(y, m, min(d.day, calendar.monthrange(y, m)[1])) - timedelta(days=1)
+
+
+def add_contracts(conn, rng):
+    """Hợp đồng mẫu: thử việc 2 tháng -> 12 tháng -> 24 tháng -> không thời hạn, tới hôm nay.
+    Vài người để hợp đồng sắp hết hạn để có nhắc việc trên Tổng quan."""
+    today = date.today()
+    n = 0
+    rows = conn.execute("SELECT id, code, position, hire_date, status, termination_date FROM employees "
+                        "WHERE hire_date IS NOT NULL AND id NOT IN (SELECT employee_id FROM contracts) "
+                        "ORDER BY id").fetchall()
+    for i, emp in enumerate(rows):
+        if i == len(rows) - 1:
+            continue  # người cuối chưa có hợp đồng
+        base = rng.choice([8, 9, 10, 11, 12, 14, 15]) * 1_000_000
+        if emp["position"] and emp["position"].startswith(("Trưởng", "Giám đốc")):
+            base = rng.choice([22, 25, 30]) * 1_000_000
+        allowances = json.dumps([{"name": "Ăn trưa", "amount": 730000}], ensure_ascii=False)
+        start = date.fromisoformat(emp["hire_date"])
+        stop = date.fromisoformat(emp["termination_date"]) if emp["termination_date"] else today
+        expiring = i % 7 == 3  # để hợp đồng hiện tại sắp hết hạn
+        salary = round(base * 0.85, -5)
+        for k, (ctype, months) in enumerate([("probation", 2), ("fixed", 12), ("fixed", 24), ("indefinite", 0)]):
+            if start > stop:
+                break
+            end = _plus_months(start, months) if months else None
+            if expiring and end and end >= today:
+                end = today + timedelta(days=rng.randint(5, 28))
+            n += 1
+            conn.execute(
+                "INSERT INTO contracts (employee_id, number, type, sign_date, start_date, end_date, position, "
+                "salary, insurance_salary, allowances, status, terminated_on) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (emp["id"], f"{n:03d}/{start.year}/{'HĐTV' if ctype == 'probation' else 'HĐLĐ'}", ctype,
+                 start.isoformat(), start.isoformat(), end and end.isoformat(), emp["position"], salary,
+                 salary if ctype != "probation" else 0, allowances,
+                 "terminated" if emp["termination_date"] and (end is None or end > stop) else "signed",
+                 emp["termination_date"] if emp["termination_date"] and (end is None or end > stop) else None))
+            if k == 1:
+                salary = base
+            if end is None or end >= today or (expiring and end >= today):
+                break
+            start = end + timedelta(days=1)
+            salary = round(salary * 1.08, -5) if k else base
+    conn.commit()
+    return n
+
+
 def seed(conn, days, rng, with_photos=True):
     today = date.today()
     start = today - timedelta(days=days)
@@ -246,12 +405,13 @@ def seed(conn, days, rng, with_photos=True):
         else:
             hire = today - timedelta(days=rng.randint(200, 2500))
         status = "inactive" if i == 8 else "active"
+        left = (today - timedelta(days=rng.randint(15, 40))).isoformat() if status == "inactive" else None
         dob = date(rng.randint(1975, 2001), rng.randint(1, 12), rng.randint(1, 28))
         has_fp = rng.random() < 0.75
         cur = conn.execute(
             "INSERT INTO employees (code, full_name, gender, dob, phone, email, address, "
-            "department_id, position, hire_date, status, annual_leave_days, rfid_uid, fingerprint_id) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "department_id, position, hire_date, status, annual_leave_days, rfid_uid, fingerprint_id, "
+            "termination_date, termination_reason) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 f"NV{i:03d}", name, gender, dob.isoformat(),
                 "09" + "".join(str(rng.randint(0, 9)) for _ in range(8)),
@@ -260,7 +420,7 @@ def seed(conn, days, rng, with_photos=True):
                 dept_ids[dept], DEPARTMENTS[dept][pos_idx], hire.isoformat(), status,
                 12 + (2 if pos_idx == 0 else 0),
                 "".join(rng.choice("0123456789ABCDEF") for _ in range(8)),
-                i if has_fp else None,
+                i if has_fp else None, left, "resign" if left else None,
             ),
         )
         employees.append({"id": cur.lastrowid, "hire": hire, "lateness": lateness,
@@ -380,6 +540,7 @@ def seed(conn, days, rng, with_photos=True):
             d += timedelta(days=1)
 
     add_overtime(conn, rng, start, today)
+    add_contracts(conn, rng)
     conn.commit()
     n_leaves = conn.execute("SELECT COUNT(*) FROM leave_requests").fetchone()[0]
     return len(DEPARTMENTS), len(employees), logs, n_leaves
@@ -396,6 +557,8 @@ def main():
                     help="chỉ thêm tài khoản nhân viên + mô phỏng quy trình xác nhận bảng công tháng trước")
     ap.add_argument("--add-ot", action="store_true",
                     help="chỉ thêm lượt OT thứ 7, CN vào CSDL hiện có (không xoá dữ liệu)")
+    ap.add_argument("--add-contracts", action="store_true",
+                    help="chỉ thêm hợp đồng mẫu cho nhân viên chưa có hợp đồng (không xoá dữ liệu)")
     args = ap.parse_args()
 
     conn = init_db(args.db)
@@ -409,6 +572,9 @@ def main():
         today = date.today()
         n = add_overtime(conn, random.Random(args.seed), today - timedelta(days=args.days), today)
         print(f"Đã thêm {n} ngày OT (thứ 7, CN) → {args.db}")
+        return
+    if args.add_contracts:
+        print(f"Đã thêm {add_contracts(conn, random.Random(args.seed))} hợp đồng → {args.db}")
         return
     existing = conn.execute("SELECT COUNT(*) FROM employees").fetchone()[0]
     if existing and not args.reset:

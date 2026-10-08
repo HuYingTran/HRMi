@@ -7,10 +7,10 @@ from datetime import date, timedelta
 from flask import Response, abort, flash, g, redirect, render_template, request, url_for
 from werkzeug.security import generate_password_hash
 
-from . import services, timesheet
+from . import notify, services, timesheet
 from .db import get_db
 from .services import ServiceError
-from .views import _get_employee, bp, cfg, is_admin, login_required
+from .views import _get_employee, bp, cfg, is_admin, login_required, mail_wake
 
 
 def _last_month():
@@ -41,10 +41,13 @@ def _context(emp_id, month):
     return emp, timesheet.get(db, emp_id, month), is_self, can_review
 
 
-def _run(action, emp_id, month, ok_message):
+def _run(action, emp_id, month, ok_message, event=None, note=None):
+    """Thực hiện bước quy trình; thành công thì gửi email sự kiện `event` (nếu có)."""
     try:
         action()
         flash(ok_message, "success")
+        if event and notify.timesheet_event(get_db(), event, emp_id, month, note):
+            mail_wake()
     except ServiceError as exc:
         flash(str(exc), "error")
     return _back(emp_id, month)
@@ -136,7 +139,8 @@ def timesheet_submit(emp_id, month):
     if not is_self:
         abort(403)
     note = request.form.get("note", "").strip() or None
-    return _run(lambda: timesheet.submit(get_db(), ts, note), emp_id, month, "Đã gửi cấp trên duyệt.")
+    return _run(lambda: timesheet.submit(get_db(), ts, note), emp_id, month, "Đã gửi cấp trên duyệt.",
+                "timesheet_submitted", note)
 
 
 # ---------------------------------------------------------------- cấp trên / admin
@@ -152,7 +156,10 @@ def timesheet_send():
         first = services.parse_month(month)
         ids = [r["employee"]["id"] for r in services.monthly_report(db, first.year, first.month, cfg())]
     try:
-        n = timesheet.send(db, ids, month)
+        sent = timesheet.send(db, ids, month)
+        n = len(sent)
+        if sum(notify.timesheet_event(db, "timesheet_sent", emp_id, month) for emp_id in sent):
+            mail_wake()
         flash(f"Đã gửi bảng công cho {n} nhân viên." if n else "Không có bảng công mới để gửi.",
               "success" if n else "warning")
     except ServiceError as exc:
@@ -180,7 +187,7 @@ def timesheet_return(emp_id, month):
         abort(403)
     note = request.form.get("note", "").strip()
     return _run(lambda: timesheet.return_to_employee(get_db(), ts, note), emp_id, month,
-                "Đã trả lại cho nhân viên.")
+                "Đã trả lại cho nhân viên.", "timesheet_returned", note)
 
 
 @bp.route("/timesheets/<int:emp_id>/<month>/confirm", methods=["POST"])
@@ -191,7 +198,8 @@ def timesheet_confirm(emp_id, month):
         abort(403)
     note = request.form.get("note", "").strip() or None
     return _run(lambda: timesheet.confirm(get_db(), emp_id, month, g.user, cfg(), note=note,
-                                          force=is_admin()), emp_id, month, "Đã chốt công.")
+                                          force=is_admin()), emp_id, month, "Đã chốt công.",
+                "timesheet_confirmed", note)
 
 
 @bp.route("/timesheets/confirm-bulk", methods=["POST"])
@@ -208,8 +216,11 @@ def timesheet_confirm_bulk():
         try:
             timesheet.confirm(db, emp_id, month, g.user, cfg())
             done += 1
+            notify.timesheet_event(db, "timesheet_confirmed", emp_id, month)
         except ServiceError as exc:
             errors.add(str(exc))
+    if done:
+        mail_wake()
     flash(f"Đã chốt công {done} nhân viên." if done else "Không có bảng công nào sẵn sàng chốt.",
           "success" if done else "warning")
     for e in sorted(errors):
@@ -239,7 +250,8 @@ def timesheets_csv():
     w.writerow(["Tháng", "Mã NV", "Họ tên", "Phòng ban", "Trạng thái", "Người chốt", "Thời điểm chốt",
                 "Công chuẩn", "Ngày đi làm", "Công tác", "Nghỉ có lương", "Nghỉ ốm/không lương",
                 "Vắng", "Số lần muộn", "Phút muộn", "Phút về sớm", "Giờ công", "Ngày OT", "Giờ OT",
-                "Công tính lương"])
+                "Công tính lương", "Ngày lễ", "OT ngày thường", "OT ngày nghỉ", "OT ngày lễ", "OT ban đêm",
+                "Giờ OT quy đổi", "OT chưa duyệt"])
     for r in services.monthly_report(db, first.year, first.month, cfg()):
         e, t = r["employee"], states.get(r["employee"]["id"])
         d = t["data"] if t and t["data"] else r
@@ -248,7 +260,11 @@ def timesheets_csv():
                     (t or {}).get("confirmed_by_name") or "", (t or {}).get("confirmed_at") or "",
                     d["workdays"], d["present"], d["business"], d["paid_leave"], d["unpaid_leave"],
                     d["absent"], d["late"], d["late_minutes"], d["early_minutes"], d["hours"],
-                    d["ot_days"], d["ot_hours"], d["payable_days"]])
+                    d["ot_days"], d["ot_hours"], d["payable_days"],
+                    # bản chốt cũ (trước khi có ngày lễ / hệ số OT) không có các trường dưới
+                    *(d.get(k, "") for k in ("holidays", "ot_weekday_hours", "ot_weekend_hours",
+                                             "ot_holiday_hours", "ot_night_hours", "ot_weighted_hours",
+                                             "ot_pending_hours"))])
     return Response(buf.getvalue(), mimetype="text/csv",
                     headers={"Content-Disposition": f"attachment; filename=bang-cong-{month}.csv"})
 

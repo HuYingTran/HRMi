@@ -11,6 +11,10 @@
   <option value="">— Chưa có —</option>
   {% for e in employees %}<option value="{{ e.id }}" {{ 'selected' if e.id == selected }}>{{ e.code }} · {{ e.full_name }}</option>{% endfor %}
 {%- endmacro %}
+{% macro shift_options(selected) -%}
+  <option value="">— Theo cấp trên / mặc định —</option>
+  {% for s in shifts %}<option value="{{ s.id }}" {{ 'selected' if s.id == selected }}>{{ s.name }} ({{ s.work_start }}–{{ s.work_end }})</option>{% endfor %}
+{%- endmacro %}
 
 {% block content %}
 <div class="page-head">
@@ -28,6 +32,7 @@
   <div class="field grow"><label>Tên</label><input name="name" required placeholder="Tên phòng ban"></div>
   <div class="field"><label>Cấp trên</label><select name="parent_id">{{ parent_options(None, []) }}</select></div>
   <div class="field"><label>Trưởng phòng</label><select name="manager_id">{{ manager_options(None) }}</select></div>
+  <div class="field"><label>Ca làm việc</label><select name="shift_id">{{ shift_options(None) }}</select></div>
   <button class="btn primary">{{ icon('check') }} Lưu</button>
 </form>
 
@@ -84,7 +89,7 @@
 {# ---------------------------------------------------------- danh sách #}
 <section class="card flush table-wrap" data-panel="list" hidden>
   <table>
-    <thead><tr><th>Phòng ban</th><th>Cấp trên</th><th>Trưởng phòng</th><th class="num">Người</th><th></th></tr></thead>
+    <thead><tr><th>Phòng ban</th><th>Cấp trên</th><th>Trưởng phòng</th><th>Ca làm việc</th><th class="num">Người</th><th></th></tr></thead>
     <tbody>
     {% for d in departments %}
       <tr>
@@ -95,6 +100,7 @@
         </td>
         <td><select form="f{{ d.id }}" name="parent_id">{{ parent_options(d.parent_id, d.blocked) }}</select></td>
         <td><select form="f{{ d.id }}" name="manager_id">{{ manager_options(d.manager_id) }}</select></td>
+        <td><select form="f{{ d.id }}" name="shift_id" title="Áp dụng cho cả phòng ban con chưa có ca riêng">{{ shift_options(d.shift_id) }}</select></td>
         <td class="num"><a href="{{ url_for('main.employees', department=d.id) }}">{{ d.members|length }}</a></td>
         <td class="num" style="white-space:nowrap">
           <button form="f{{ d.id }}" class="btn small" title="Lưu">{{ icon('check') }}</button>

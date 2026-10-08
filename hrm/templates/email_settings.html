@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon, empty %}
+{% block title %}Thông báo email{% endblock %}
+{% block content %}
+{% set OUT_CLASS = {'pending': 'pending', 'sent': 'approved', 'failed': 'rejected'} %}
+{% set OUT_LABEL = {'pending': 'Chờ gửi', 'sent': 'Đã gửi', 'failed': 'Lỗi'} %}
+<div class="page-head">
+  <div><h1>Thông báo email</h1>
+    <div class="sub">Gửi email khi có đơn cần duyệt, đơn được duyệt và khi bảng công chuyển bước.</div></div>
+</div>
+
+<div class="grid-2-1">
+  <form method="post" class="card">
+    <div class="card-head" style="margin-bottom:.6rem">
+      <h2>{{ icon('inbox') }} Máy chủ gửi thư (SMTP)</h2>
+      <label style="font-weight:600"><input type="checkbox" name="enabled" value="1" {{ 'checked' if s.enabled == '1' }}> Bật gửi email</label>
+    </div>
+    <div class="form-grid">
+      <div class="field"><label>{{ MAIL_SETTINGS.host[0] }}</label><input name="host" value="{{ s.host }}" placeholder="smtp.gmail.com"></div>
+      <div class="field"><label>{{ MAIL_SETTINGS.port[0] }}</label><input name="port" value="{{ s.port }}" inputmode="numeric" class="mono"></div>
+      <div class="field"><label>{{ MAIL_SETTINGS.security[0] }}</label>
+        <select name="security">{% for k, v in SECURITY.items() %}<option value="{{ k }}" {{ 'selected' if s.security == k }}>{{ v }}</option>{% endfor %}</select></div>
+      <div class="field"><label>{{ MAIL_SETTINGS.username[0] }}</label><input name="username" value="{{ s.username }}" autocomplete="off"></div>
+      <div class="field"><label>{{ MAIL_SETTINGS.password[0] }}</label>
+        {% if env_password %}<input disabled placeholder="Đặt bằng biến môi trường HRM_SMTP_PASSWORD">
+        {% else %}<input type="password" name="password" autocomplete="new-password" placeholder="{{ '•••••• (đã lưu, để trống nếu không đổi)' if s.password else '' }}">
+          {% if s.password %}<label class="hint"><input type="checkbox" name="clear_password" value="1"> Xoá mật khẩu đã lưu</label>{% endif %}{% endif %}</div>
+      <div class="field"><label>{{ MAIL_SETTINGS.sender[0] }}</label><input name="sender" value="{{ s.sender }}" placeholder="hrm@congty.vn"></div>
+      <div class="field"><label>{{ MAIL_SETTINGS.sender_name[0] }}</label><input name="sender_name" value="{{ s.sender_name }}"></div>
+      <div class="field"><label>{{ MAIL_SETTINGS.admin_email[0] }}</label><input name="admin_email" value="{{ s.admin_email }}" placeholder="nhansu@congty.vn"></div>
+      <div class="field wide"><label>{{ MAIL_SETTINGS.base_url[0] }}</label><input name="base_url" value="{{ s.base_url }}" placeholder="http://192.168.1.20:5000 — để trống: dùng địa chỉ đang mở trang">
+        <span class="hint">Liên kết "Xem chi tiết" trong email trỏ tới địa chỉ này.</span></div>
+    </div>
+    <div class="form-section" style="margin-top:1.2rem;padding-top:1rem">
+      <h2>{{ icon('check') }} Sự kiện gửi email</h2>
+      <div class="form-grid">
+        {% for k, label in EVENTS.items() %}
+        <label><input type="checkbox" name="event.{{ k }}" value="1" {{ 'checked' if s['event.' ~ k] == '1' }}> {{ label }}</label>
+        {% endfor %}
+      </div>
+    </div>
+    <div class="actions"><button class="btn primary">{{ icon('check') }} Lưu cấu hình</button></div>
+    <p class="hint" style="margin-bottom:0">Gmail: bật xác minh 2 bước rồi tạo <b>mật khẩu ứng dụng</b>, dùng smtp.gmail.com cổng 587 STARTTLS.
+      Mật khẩu lưu trong CSDL trên máy (thư mục instance/, không đẩy lên GitHub); muốn an toàn hơn hãy đặt bằng biến môi trường HRM_SMTP_PASSWORD trong file service.
+      {% if missing %}<br><b style="color:var(--warn)">{{ missing }} nhân viên chưa có email</b> trong hồ sơ nên sẽ không nhận được thông báo.{% endif %}</p>
+  </form>
+
+  <section class="stack" style="align-self:start">
+    <form method="post" action="{{ url_for('main.email_test') }}" class="card">
+      <h2>{{ icon('inbox') }} Gửi thử</h2>
+      <div class="field"><label>Gửi tới</label><input name="to" type="email" required value="{{ s.admin_email }}"></div>
+      <div class="actions"><button class="btn">{{ icon('check') }} Gửi thư thử</button></div>
+      <p class="hint" style="margin-bottom:0">Gửi ngay bằng cấu hình đã lưu (bấm "Lưu cấu hình" trước).</p>
+    </form>
+    <div class="card flush">
+      <div class="card-head">
+        <h2>{{ icon('list') }} Hàng đợi</h2>
+        <span class="hint mono">{{ counts.get('pending', 0) }} chờ · {{ counts.get('sent', 0) }} đã gửi · {{ counts.get('failed', 0) }} lỗi</span>
+      </div>
+      {% if counts.get('failed') %}
+      <form method="post" action="{{ url_for('main.email_retry') }}" style="padding:0 1.4rem .8rem"><button class="btn small">Gửi lại thư lỗi</button></form>
+      {% endif %}
+      <ul class="events" style="padding:0 1.4rem 1.2rem">
+        {% for m in outbox %}
+        <li><time>{{ m.created_at[5:16] }}</time>
+          <div class="ev-body">{{ m.subject }}<small>{{ m.recipient }}{% if m.error %} · <span style="color:var(--bad)">{{ m.error }}</span>{% endif %}</small></div>
+          <span class="badge {{ OUT_CLASS[m.status] }}">{{ OUT_LABEL[m.status] }}</span></li>
+        {% else %}
+        <li>{{ empty('Chưa có thư nào', 'inbox') }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+  </section>
+</div>
+{% endblock %}

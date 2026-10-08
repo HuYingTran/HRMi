@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon, empty %}
+{% block title %}Quy định công{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><h1>Ngày lễ & làm thêm giờ</h1>
+    <div class="sub">Lịch nghỉ lễ và cách tính làm thêm giờ. Bảng công đã chốt giữ nguyên số liệu lúc chốt.</div></div>
+  <form method="get" class="toolbar" style="margin:0">
+    <a class="btn ghost" href="{{ url_for('main.work_rules', year=year - 1) }}" title="Năm trước">←</a>
+    <input type="number" name="year" value="{{ year }}" min="2000" max="2100" style="width:6.5rem" onchange="this.form.submit()">
+    <a class="btn ghost" href="{{ url_for('main.work_rules', year=year + 1) }}" title="Năm sau">→</a>
+  </form>
+</div>
+
+<div class="grid-2-1">
+  <section class="card flush">
+    <div class="card-head">
+      <h2>{{ icon('calendar') }} Ngày lễ {{ year }} <span class="faint mono" style="font-size:.85rem">· {{ paid }} ngày hưởng lương</span></h2>
+      <form method="post" action="{{ url_for('main.work_rules_suggest') }}">
+        <input type="hidden" name="year" value="{{ year }}">
+        <button class="btn small" title="Tết Dương lịch, Tết Âm lịch (5 ngày), Giỗ Tổ, 30/4, 1/5, Quốc khánh (2 ngày) và ngày nghỉ bù">{{ icon('download') }} Nạp ngày lễ theo luật</button>
+      </form>
+    </div>
+    <div class="table-wrap">
+    <table>
+      <thead><tr><th>Ngày</th><th>Tên</th><th>Loại</th><th></th></tr></thead>
+      <tbody>
+      {% for h in holidays %}
+        {% set d = h.day|todate %}
+        <tr class="{{ 'off' if d < today }}">
+          <td class="mono">{{ DOW[d.weekday()] }} {{ h.day|d }}</td>
+          <td>{{ h.name }}</td>
+          <td><span class="badge {{ {'holiday': 'holiday', 'off': 'off', 'makeup': 'present'}[h.kind] }} plain">{{ HOLIDAY_KINDS[h.kind] }}</span></td>
+          <td class="num">
+            <form class="inline" method="post" action="{{ url_for('main.work_rules_holiday_delete', day=h.day) }}" onsubmit="return confirm('Xoá {{ h.name }} ({{ h.day|d }})?')">
+              <input type="hidden" name="year" value="{{ year }}">
+              <button class="btn link danger" title="Xoá">{{ icon('trash') }}</button>
+            </form>
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="4">{{ empty('Chưa có ngày lễ nào. Bấm "Nạp ngày lễ theo luật" để thêm nhanh.', 'calendar') }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    <form method="post" action="{{ url_for('main.work_rules_holiday') }}" style="padding:1.1rem 1.4rem 1.4rem">
+      <input type="hidden" name="year" value="{{ year }}">
+      <div class="form-grid">
+        <div class="field"><label>Ngày</label><input type="date" name="day" required value="{{ year }}-01-01"></div>
+        <div class="field"><label>Tên</label><input name="name" required maxlength="100" placeholder="VD: Nghỉ Tết (theo thông báo)"></div>
+        <div class="field"><label>Loại</label>
+          <select name="kind">{% for k, v in HOLIDAY_KINDS.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select></div>
+      </div>
+      <div class="actions"><button class="btn primary">{{ icon('plus') }} Thêm / sửa ngày</button></div>
+      <p class="hint" style="margin-bottom:0">
+        <b>Nghỉ lễ</b>: không tính vắng, tính 1 công hưởng lương; đi làm được tính OT ngày lễ.
+        <b>Nghỉ hoán đổi</b>: ngày làm việc được đổi thành ngày nghỉ, coi như ngày nghỉ hằng tuần.
+        <b>Làm bù</b>: ngày nghỉ hằng tuần phải đi làm, coi như ngày làm việc.
+        Lịch nghỉ Tết và ngày nghỉ liền kề Quốc khánh do Thủ tướng quyết định mỗi năm, hãy kiểm tra lại sau khi nạp.
+      </p>
+    </form>
+  </section>
+
+  <form method="post" action="{{ url_for('main.work_rules_ot') }}" class="card" id="ot" style="align-self:start">
+    <input type="hidden" name="year" value="{{ year }}">
+    <h2>{{ icon('clock') }} Làm thêm giờ (OT)</h2>
+    <div class="field-label hint" style="margin-bottom:.4rem">Hệ số lương OT (% lương giờ thường)</div>
+    <div class="form-grid" style="grid-template-columns:repeat(3,minmax(0,1fr))">
+      {% for k in ('ot_weekday', 'ot_weekend', 'ot_holiday') %}
+      <div class="field"><label>{{ RULES[k][0] }}</label><input type="number" name="{{ k }}" value="{{ rules[k] }}" min="{{ RULES[k][3][0] }}" max="{{ RULES[k][3][1] }}" required></div>
+      {% endfor %}
+    </div>
+    <div class="form-grid" style="margin-top:1rem">
+      {% for k in ('ot_night', 'ot_min_minutes', 'ot_limit_month', 'ot_limit_year', 'req_limit_month') %}
+      <div class="field wide"><label>{{ RULES[k][0] }}</label><input type="number" name="{{ k }}" value="{{ rules[k] }}" min="{{ RULES[k][3][0] }}" max="{{ RULES[k][3][1] }}" required></div>
+      {% endfor %}
+      <div class="field wide"><label>{{ RULES.ot_approval[0] }}</label>
+        <select name="ot_approval">{% for k, v in OT_APPROVAL.items() %}<option value="{{ k }}" {{ 'selected' if rules.ot_approval == k }}>{{ v }}</option>{% endfor %}</select></div>
+    </div>
+    <div class="actions"><button class="btn primary">{{ icon('check') }} Lưu</button></div>
+    <p class="hint" style="margin-bottom:0">Mặc định theo Bộ luật Lao động 2019: ít nhất 150% / 200% / 300%, làm đêm cộng thêm ít nhất 30%.
+      Giờ OT quy đổi = giờ × hệ số + giờ đêm × phần cộng thêm, dùng để tính lương OT.
+      Khi cần đăng ký, chỉ phần giờ làm nằm trong khung giờ của <a href="{{ url_for('main.requests_list') }}">đơn đăng ký OT</a> đã duyệt mới được tính.</p>
+  </form>
+</div>
+{% endblock %}

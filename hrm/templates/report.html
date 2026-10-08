@@ -4,7 +4,7 @@
 {% block content %}
 <div class="page-head">
   <div><h1>Báo cáo {{ month[5:] }}/{{ month[:4] }}</h1>
-    <div class="sub mono">{{ rows and rows[0].workdays }} ngày công chuẩn</div></div>
+    <div class="sub mono">{{ rows and rows[0].workdays }} ngày công chuẩn{% if rows and rows[0].holidays %} · gồm {{ rows[0].holidays }} ngày lễ{% endif %}</div></div>
   <div class="toolbar" style="margin:0">
     <form method="get"><input type="month" name="month" value="{{ month }}" onchange="this.form.submit()"></form>
     <a class="btn primary" href="{{ url_for('main.report_csv', month=month) }}">{{ icon('download') }} CSV</a>
@@ -16,7 +16,7 @@
   <div class="stat warn"><div class="top">Đi muộn <span class="ico">{{ icon('alert') }}</span></div><div class="value">{{ rows|sum(attribute='late') }}<small> lần</small></div></div>
   <div class="stat info"><div class="top">Nghỉ phép <span class="ico">{{ icon('umbrella') }}</span></div><div class="value">{{ rows|sum(attribute='leave_days')|num }}</div></div>
   <div class="stat bad"><div class="top">Vắng <span class="ico">{{ icon('calendar-x') }}</span></div><div class="value">{{ rows|sum(attribute='absent') }}</div></div>
-  <div class="stat ot"><div class="top">OT <span class="ico">{{ icon('clock') }}</span></div><div class="value">{{ (rows|sum(attribute='ot_hours'))|round(1)|num }}<small> h</small></div><div class="foot">{{ rows|sum(attribute='ot_days') }} ngày</div></div>
+  <div class="stat ot"><div class="top">OT <span class="ico">{{ icon('clock') }}</span></div><div class="value">{{ (rows|sum(attribute='ot_hours'))|round(1)|num }}<small> h</small></div><div class="foot">{{ rows|sum(attribute='ot_days') }} ngày · quy đổi {{ (rows|sum(attribute='ot_weighted_hours'))|round(1)|num }}h{% set pend = (rows|sum(attribute='ot_pending_hours'))|round(1) %}{% if pend %} · <span style="color:var(--warn)">{{ pend|num }}h chưa duyệt</span>{% endif %}</div></div>
   <div class="stat"><div class="top">Giờ công <span class="ico">{{ icon('clock') }}</span></div><div class="value">{{ (rows|sum(attribute='hours'))|round|int }}<small> h</small></div></div>
 </div>
 
@@ -25,13 +25,13 @@
     <thead><tr>
       <th>Nhân viên</th><th>Phòng ban</th><th style="min-width:120px">Chuyên cần</th>
       <th class="num">Đi làm</th><th class="num">Muộn</th><th class="num">Muộn′</th><th class="num">Sớm′</th>
-      <th class="num">Thiếu ra</th><th class="num">Công tác</th><th class="num">Phép</th><th class="num">OT</th><th class="num">Vắng</th><th class="num">Giờ</th>
+      <th class="num">Thiếu ra</th><th class="num">Công tác</th><th class="num">Phép</th><th class="num">Lễ</th><th class="num">OT</th><th class="num">Vắng</th><th class="num">Giờ</th>
     </tr></thead>
     <tbody>
     {% for r in rows %}
       {% set pct = ((r.present + r.business + r.leave_days) / r.workdays * 100) if r.workdays else 0 %}
       <tr>
-        <td>{{ person(r.employee) }}</td>
+        <td>{{ person(r.employee) }}{% for w in warnings.get(r.employee.id, []) %}<div><span class="badge bad plain">{{ w }}</span></div>{% endfor %}</td>
         <td>{{ dept(r.employee.department, r.employee.department_id) }}</td>
         <td>
           <div class="meter" style="height:6px" title="Đi làm {{ r.present }}, công tác {{ r.business|num }}, nghỉ phép {{ r.leave_days|num }}, vắng {{ r.absent }}">
@@ -52,12 +52,13 @@
         <td class="num">{{ r.missing_out or '' }}</td>
         <td class="num">{{ r.business|num if r.business else '' }}</td>
         <td class="num">{{ r.leave_days|num if r.leave_days else '' }}</td>
-        <td class="num" title="{{ r.ot_days }} ngày">{{ (r.ot_hours|num ~ 'h') if r.ot_days else '' }}</td>
+        <td class="num">{{ r.holidays or '' }}</td>
+        <td class="num" title="{{ r.ot_days }} ngày · thường {{ r.ot_weekday_hours|num }}h · nghỉ {{ r.ot_weekend_hours|num }}h · lễ {{ r.ot_holiday_hours|num }}h · đêm {{ r.ot_night_hours|num }}h · quy đổi {{ r.ot_weighted_hours|num }}h">{{ (r.ot_hours|num ~ 'h') if r.ot_days else '' }}{% if r.ot_pending_hours %}<div class="hint" style="color:var(--warn)" title="Làm thêm chưa có đơn OT được duyệt">+{{ r.ot_pending_hours|num }}h ?</div>{% endif %}</td>
         <td class="num">{{ r.absent or '' }}</td>
         <td class="num">{{ r.hours|num }}</td>
       </tr>
     {% else %}
-      <tr><td colspan="13">{{ empty('Chưa có nhân viên', 'users') }}</td></tr>
+      <tr><td colspan="14">{{ empty('Chưa có nhân viên', 'users') }}</td></tr>
     {% endfor %}
     </tbody>
   </table>
@@ -68,6 +69,6 @@
   <span><i style="background:var(--c-trip)"></i>Công tác</span>
   <span><i style="background:var(--c-leave)"></i>Nghỉ phép</span>
   <span><i style="background:var(--c-bad)"></i>Vắng</span>
-  <span class="faint">· OT = giờ làm thứ 7, CN</span>
+  <span class="faint">· OT = làm ngày nghỉ, ngày lễ và sau giờ tan ca (rê chuột để xem chi tiết) · <a href="{{ url_for('main.work_rules') }}">quy định</a></span>
 </div>
 {% endblock %}

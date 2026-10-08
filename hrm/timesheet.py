@@ -119,16 +119,17 @@ def _require(ts, *states):
 
 
 def send(conn, employee_ids, month, today=None):
-    """Gửi bảng công cho nhân viên xác nhận. Trả về số bảng công mới gửi."""
+    """Gửi bảng công cho nhân viên xác nhận. Trả về danh sách nhân viên mới được gửi."""
     if not services.month_ended(month, today):
         raise ServiceError("Chỉ gửi được bảng công của tháng đã kết thúc.")
-    n = 0
+    sent = []
     for emp_id in employee_ids:
         cur = conn.execute("INSERT OR IGNORE INTO timesheets (employee_id, month, status) "
                            "VALUES (?, ?, 'sent')", (emp_id, month))
-        n += cur.rowcount
+        if cur.rowcount:
+            sent.append(emp_id)
     conn.commit()
-    return n
+    return sent
 
 
 def explain(conn, ts, day, reason, proposed_in=None, proposed_out=None):

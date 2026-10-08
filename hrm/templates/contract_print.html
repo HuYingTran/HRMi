@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ 'Hợp đồng thử việc' if c.type == 'probation' else 'Hợp đồng lao động' }} {{ c.number or '' }} · {{ emp.full_name }}</title>
+<style>
+  :root { color-scheme: light; }
+  body { margin: 0; background: #e9e9e9; color: #111; font: 13.5pt/1.5 "Times New Roman", Times, serif; }
+  .page { box-sizing: border-box; width: 210mm; min-height: 297mm; margin: 1rem auto; padding: 20mm 20mm 20mm 25mm; background: #fff; box-shadow: 0 2px 12px rgba(0,0,0,.15); }
+  .bar { position: sticky; top: 0; display: flex; gap: .5rem; justify-content: center; padding: .6rem; background: #333; font: 14px system-ui, sans-serif; }
+  .bar button, .bar a { padding: .4rem .9rem; border-radius: 6px; border: 0; background: #fff; color: #111; cursor: pointer; text-decoration: none; }
+  .bar span { color: #ddd; align-self: center; }
+  .head { display: grid; grid-template-columns: 1fr 1.3fr; text-align: center; gap: 1rem; }
+  .head b { display: block; }
+  .head .line { width: 40%; margin: .2rem auto 0; border-top: 1px solid #111; }
+  .title { text-align: center; margin: 1.6rem 0 .2rem; font-size: 16pt; font-weight: bold; }
+  .sub { text-align: center; font-style: italic; margin-bottom: 1rem; }
+  h3 { font-size: 13.5pt; margin: 1rem 0 .3rem; }
+  p { margin: .25rem 0; text-align: justify; }
+  .party { display: grid; grid-template-columns: 11rem 1fr; gap: .1rem .5rem; margin: .3rem 0 .6rem; }
+  .blank { color: #888; }
+  table.allow { border-collapse: collapse; margin: .2rem 0 .2rem 1.2rem; }
+  table.allow td { padding: .05rem .8rem .05rem 0; }
+  .sign { display: grid; grid-template-columns: 1fr 1fr; text-align: center; margin-top: 2rem; }
+  .sign i { display: block; font-size: 12pt; margin-bottom: 5rem; }
+  @media print {
+    body { background: #fff; }
+    .bar { display: none; }
+    .page { width: auto; min-height: 0; margin: 0; padding: 0; box-shadow: none; }
+    @page { size: A4; margin: 20mm 20mm 20mm 25mm; }
+  }
+  @media (max-width: 220mm) { .page { width: auto; margin: 0; padding: 16px; } }
+</style>
+</head>
+<body>
+{% set blank = '<span class="blank">……………………</span>'|safe %}
+{% set probation = c.type == 'probation' %}
+<div class="bar">
+  <button onclick="window.print()">In / lưu PDF</button>
+  <a href="{{ url_for('main.employee_detail', emp_id=emp.id) }}#contracts">Về hồ sơ</a>
+  {% if not company.name %}<span>Chưa có thông tin công ty: vào Cài đặt › Công ty để điền.</span>{% endif %}
+</div>
+<div class="page">
+  <div class="head">
+    <div><b>{{ (company.name or 'TÊN CÔNG TY')|upper }}</b>Số: {{ c.number or blank }}<div class="line"></div></div>
+    <div><b>CỘNG HOÀ XÃ HỘI CHỦ NGHĨA VIỆT NAM</b><b>Độc lập – Tự do – Hạnh phúc</b><div class="line"></div></div>
+  </div>
+
+  <div class="title">{{ 'HỢP ĐỒNG THỬ VIỆC' if probation else 'HỢP ĐỒNG LAO ĐỘNG' }}</div>
+  <div class="sub">{% if not probation %}({{ P.CONTRACT_TYPES[c.type] }}){% endif %}</div>
+
+  <p><i>Căn cứ Bộ luật Lao động số 45/2019/QH14 ngày 20/11/2019 và các văn bản hướng dẫn thi hành;</i></p>
+  {% set sd = c.sign_date or c.start_date %}
+  <p>Hôm nay, ngày {{ sd[8:10] }} tháng {{ sd[5:7] }} năm {{ sd[:4] }}, tại {{ company.address or blank }}, chúng tôi gồm:</p>
+
+  <h3>Bên A – Người sử dụng lao động</h3>
+  <div class="party">
+    <span>Tên đơn vị:</span><b>{{ company.name or blank }}</b>
+    <span>Địa chỉ:</span><span>{{ company.address or blank }}</span>
+    <span>Mã số thuế:</span><span>{{ company.tax_code or blank }}</span>
+    <span>Điện thoại:</span><span>{{ company.phone or blank }}</span>
+    <span>Đại diện:</span><span>{{ company.representative or blank }} – Chức vụ: {{ company.representative_title or blank }}</span>
+  </div>
+
+  <h3>Bên B – Người lao động</h3>
+  <div class="party">
+    <span>Họ và tên:</span><b>{{ emp.full_name }}</b>
+    <span>Giới tính · ngày sinh:</span><span>{{ emp.gender or blank }} · {{ emp.dob|d or blank }}</span>
+    <span>Số CCCD:</span><span>{{ emp.id_number or blank }}, cấp ngày {{ emp.id_issue_date|d or blank }}, tại {{ emp.id_issue_place or blank }}</span>
+    <span>Địa chỉ:</span><span>{{ emp.address or blank }}</span>
+    <span>Điện thoại:</span><span>{{ emp.phone or blank }}</span>
+    <span>Mã số thuế:</span><span>{{ emp.tax_code or blank }}</span>
+  </div>
+
+  <p>Hai bên thoả thuận ký kết {{ 'hợp đồng thử việc' if probation else 'hợp đồng lao động' }} với các điều khoản sau:</p>
+
+  <h3>Điều 1. Thời hạn và công việc</h3>
+  <p>– Loại hợp đồng: {{ P.CONTRACT_TYPES[c.type] }}.</p>
+  <p>– Thời hạn: từ ngày {{ c.start_date|d }}{% if c.end_date %} đến ngày {{ c.end_date|d }}{% else %}, không xác định thời hạn{% endif %}.</p>
+  <p>– Chức danh / công việc: {{ c.position or emp.position or blank }}.</p>
+  <p>– Địa điểm làm việc: {{ company.workplace or company.address or blank }}.</p>
+
+  <h3>Điều 2. Chế độ làm việc</h3>
+  <p>– Thời giờ làm việc: {{ schedule_label(schedule) }}.</p>
+  <p>– Được nghỉ lễ, Tết theo quy định của Bộ luật Lao động{% if not probation %}; nghỉ phép năm {{ emp.annual_leave_days|num }} ngày/năm, cộng thêm theo thâm niên{% endif %}.</p>
+
+  <h3>Điều 3. Tiền lương và phụ cấp</h3>
+  <p>– Mức lương: <b>{{ c.salary|money }} đồng/tháng</b> <i>(bằng chữ: {{ P.money_words(c.salary) }})</i>.</p>
+  {% if c.allowances %}
+  <p>– Phụ cấp, các khoản bổ sung:</p>
+  <table class="allow">{% for a in c.allowances %}<tr><td>+ {{ a.name }}</td><td style="text-align:right">{{ a.amount|money }} đồng/tháng</td></tr>{% endfor %}</table>
+  {% endif %}
+  <p>– Hình thức trả lương: chuyển khoản{% if emp.bank_account %} vào tài khoản {{ emp.bank_account }}{% if emp.bank_name %} tại {{ emp.bank_name }}{% endif %}{% endif %}, trả một lần mỗi tháng.</p>
+  {% if not probation %}
+  <p>– Bảo hiểm xã hội, bảo hiểm y tế, bảo hiểm thất nghiệp: đóng theo quy định, trên mức lương {{ c.insurance_salary|money }} đồng/tháng.</p>
+  {% else %}
+  <p>– Khi kết thúc thời gian thử việc, Bên A thông báo kết quả cho Bên B; nếu đạt yêu cầu, hai bên ký kết hợp đồng lao động.</p>
+  {% endif %}
+
+  <h3>Điều 4. Quyền và nghĩa vụ</h3>
+  <p>– Bên B hoàn thành công việc được giao, chấp hành nội quy lao động và sự điều hành hợp pháp của Bên A.</p>
+  <p>– Bên A bảo đảm việc làm, điều kiện làm việc, trả lương đầy đủ, đúng hạn và thực hiện các chế độ theo quy định.</p>
+  {% if c.note %}<p>– Thoả thuận khác: {{ c.note }}</p>{% endif %}
+
+  <h3>Điều 5. Điều khoản thi hành</h3>
+  <p>Hợp đồng được lập thành 02 bản có giá trị như nhau, mỗi bên giữ 01 bản, có hiệu lực từ ngày {{ c.start_date|d }}.</p>
+
+  <div class="sign">
+    <div><b>BÊN B – NGƯỜI LAO ĐỘNG</b><i>(Ký, ghi rõ họ tên)</i>{{ emp.full_name }}</div>
+    <div><b>BÊN A – NGƯỜI SỬ DỤNG LAO ĐỘNG</b><i>(Ký tên, đóng dấu)</i>{{ company.representative or '' }}</div>
+  </div>
+</div>
+</body>
+</html>

@@ -71,7 +71,10 @@
   <div class="stat info"><div class="top">Công tác</div><div class="value">{{ s.business|num }}</div></div>
   <div class="stat leave"><div class="top">Phép CL / Ốm-KL</div><div class="value">{{ s.paid_leave|num }}<small> / {{ s.unpaid_leave|num }}</small></div></div>
   <div class="stat bad"><div class="top">Vắng</div><div class="value">{{ s.absent }}</div></div>
-  <div class="stat ot"><div class="top">OT</div><div class="value">{{ s.ot_hours|num }}<small> h</small></div></div>
+  {% if s.holidays %}<div class="stat"><div class="top">Nghỉ lễ</div><div class="value">{{ s.holidays }}</div></div>{% endif %}
+  <div class="stat ot"><div class="top">OT</div><div class="value">{{ s.ot_hours|num }}<small> h</small></div>
+    {% if s.ot_weighted_hours %}<div class="foot" title="Ngày thường {{ s.ot_weekday_hours|num }}h · ngày nghỉ {{ s.ot_weekend_hours|num }}h · ngày lễ {{ s.ot_holiday_hours|num }}h · ban đêm {{ s.ot_night_hours|num }}h">quy đổi {{ s.ot_weighted_hours|num }}h</div>{% endif %}
+    {% if s.ot_pending_hours %}<div class="foot" style="color:var(--warn)">{{ s.ot_pending_hours|num }}h chưa duyệt</div>{% endif %}</div>
   <div class="stat"><div class="top">Công tính lương</div><div class="value" style="color:var(--accent)">{{ s.payable_days|num }}</div></div>
 </div>
 {% endif %}
@@ -91,12 +94,13 @@
         {% set iso = d.date.isoformat() %}
         {% set x = explanations.get(iso) %}
         {% set is_flag = d.status in FLAGGED %}
-        <tr class="{{ 'off' if d.status in ('off', 'upcoming') }} {{ 'flag' if is_flag or x }}" data-flag="{{ 1 if is_flag or x else 0 }}">
+        <tr class="{{ 'off' if d.status in ('off', 'upcoming', 'holiday') }} {{ 'flag' if is_flag or x }}" data-flag="{{ 1 if is_flag or x else 0 }}">
           <td class="mono">{{ DOW[d.date.weekday()] }} {{ d.date.strftime('%d/%m') }}</td>
           <td class="mono">{{ d.first_in|hm }}{% if d.late_minutes %} <span class="faint">+{{ d.late_minutes }}′</span>{% endif %}</td>
           <td class="mono">{{ d.last_out|hm }}</td>
           <td class="num">{{ d.hours|num if d.hours else '' }}</td>
-          <td>{{ day_status(d) if d.status not in ('off', 'upcoming') else '' }}</td>
+          <td>{{ day_status(d) if d.status not in ('off', 'upcoming') else '' }}
+            {%- if is_self and d.status in ('late', 'missing_out') and not timesheet and can('self.request') %} <a class="btn link" href="{{ url_for('main.request_new', day=iso, type='forgot' if d.status == 'missing_out' else 'late') }}">Tạo đơn</a>{% endif %}</td>
           <td class="xcell">
             {% if x %}
               <div class="x">

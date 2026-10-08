@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon, empty, weekday_checks %}
+{% block title %}Giờ làm việc{% endblock %}
+{% macro schedule_fields(s) -%}
+  <div class="form-grid" style="grid-template-columns:repeat(auto-fit,minmax(130px,1fr))">
+    <div class="field"><label>Giờ vào</label><input type="time" name="work_start" value="{{ s.WORK_START }}" required></div>
+    <div class="field"><label>Giờ ra</label><input type="time" name="work_end" value="{{ s.WORK_END }}" required></div>
+    <div class="field"><label>Nghỉ trưa từ</label><input type="time" name="lunch_start" value="{{ s.LUNCH_START }}" required></div>
+    <div class="field"><label>đến</label><input type="time" name="lunch_end" value="{{ s.LUNCH_END }}" required></div>
+    <div class="field"><label>Ân hạn đi muộn (phút)</label><input type="number" name="grace_minutes" min="0" max="120" value="{{ s.LATE_GRACE_MINUTES }}" required></div>
+  </div>
+  <div class="field" style="margin-top:1rem"><label>Ngày làm việc trong tuần</label>{{ weekday_checks(s.WORK_DAYS) }}</div>
+  <p class="hint" style="margin-bottom:0">Nghỉ trưa trùng giờ vào ra (vd. 12:00–12:00) nghĩa là không nghỉ trưa. Chưa hỗ trợ ca qua đêm.</p>
+{%- endmacro %}
+
+{% block content %}
+<div class="page-head">
+  <div><h1>Giờ làm việc & ca</h1>
+    <div class="sub">Giờ làm áp dụng theo thứ tự: ca riêng của nhân viên → ca của phòng ban (hoặc phòng cấp trên) → giờ làm mặc định.</div></div>
+</div>
+
+<div class="grid-2-1">
+  <section class="card flush">
+    <div class="card-head"><h2>{{ icon('clock') }} Ca làm việc</h2></div>
+    <div class="table-wrap">
+    <table>
+      <thead><tr><th>Ca</th><th>Giờ làm</th><th>Nghỉ trưa</th><th class="num">Ân hạn</th><th>Đang dùng</th><th></th></tr></thead>
+      <tbody>
+        <tr>
+          <td><b>Mặc định</b><div class="hint">Ai chưa được gán ca</div></td>
+          <td class="mono">{{ schedule_label(default) }}</td>
+          <td class="mono">{{ default.LUNCH_START }}–{{ default.LUNCH_END }}</td>
+          <td class="num mono">{{ default.LATE_GRACE_MINUTES }}′</td>
+          <td class="hint">—</td><td></td>
+        </tr>
+      {% for sh in shifts %}{% set s = shift_schedule(sh) %}{% set u = usage.get(sh.id, {}) %}
+        <tr>
+          <td><b>{{ sh.name }}</b></td>
+          <td class="mono">{{ schedule_label(s) }}</td>
+          <td class="mono">{{ sh.lunch_start }}–{{ sh.lunch_end }}</td>
+          <td class="num mono">{{ sh.grace_minutes }}′</td>
+          <td style="max-width:220px">{% if u.departments %}<div>{{ icon('building') }} {{ u.departments }}</div>{% endif %}
+            {% if u.employees %}<div class="hint">{{ u.employees }} nhân viên gán riêng</div>{% endif %}
+            {% if not u %}<span class="hint">Chưa gán</span>{% endif %}</td>
+          <td class="num" style="white-space:nowrap">
+            <a class="btn link" href="{{ url_for('main.work_time', edit=sh.id) }}#shift-form" title="Sửa">{{ icon('edit') }}</a>
+            <form class="inline" method="post" action="{{ url_for('main.work_time_shift_delete', shift_id=sh.id) }}" onsubmit='return confirm({{ ("Xoá ca " ~ sh.name ~ "? Người đang dùng sẽ chuyển về giờ mặc định.")|tojson }})'>
+              <button class="btn link danger" title="Xoá">{{ icon('trash') }}</button></form>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    <form method="post" action="{{ url_for('main.work_time_shift') }}" id="shift-form" style="padding:1.1rem 1.4rem 1.4rem">
+      <h2 style="margin-top:0">{{ icon('plus' if not edit else 'edit') }} {{ 'Sửa ca ' ~ edit.name if edit else 'Thêm ca' }}</h2>
+      {% if edit %}<input type="hidden" name="id" value="{{ edit.id }}">{% endif %}
+      <div class="field" style="margin-bottom:1rem"><label>Tên ca</label><input name="name" required maxlength="60" value="{{ edit.name if edit else '' }}" placeholder="VD: Ca sáng, Hành chính T7, Kho"></div>
+      {{ schedule_fields(shift_schedule(edit) if edit else default) }}
+      <div class="actions">
+        <button class="btn primary">{{ icon('check') }} {{ 'Lưu ca' if edit else 'Thêm ca' }}</button>
+        {% if edit %}<a class="btn ghost" href="{{ url_for('main.work_time') }}">Huỷ sửa</a>{% endif %}
+      </div>
+      <p class="hint" style="margin-bottom:0">Gán ca cho cả phòng ban ở trang <a href="{{ url_for('main.departments') }}">Phòng ban</a> (bảng danh sách), hoặc cho từng người ở trang sửa hồ sơ nhân viên.</p>
+    </form>
+  </section>
+
+  <form method="post" action="{{ url_for('main.work_time_default') }}" class="card" style="align-self:start">
+    <h2>{{ icon('clock') }} Giờ làm mặc định</h2>
+    {{ schedule_fields(default) }}
+    <div class="actions"><button class="btn primary">{{ icon('check') }} Lưu</button></div>
+    <p class="hint" style="margin-bottom:0">Đổi giờ làm thì báo cáo các tháng chưa chốt được tính lại theo giờ mới; bảng công đã chốt giữ nguyên.</p>
+  </form>
+</div>
+{% endblock %}

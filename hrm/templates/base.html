@@ -18,39 +18,17 @@
       <span><div class="brand-name">HRMi</div><div class="brand-sub">mini · hrm</div></span>
     </a>
     <nav class="nav">
-      {% if is_admin %}
-      <a href="{{ url_for('main.dashboard') }}" class="{{ 'active' if ep == 'main.dashboard' }}">{{ icon('grid') }}<span class="lbl">Tổng quan</span></a>
-      <a href="{{ url_for('main.employees') }}" class="{{ 'active' if ep.startswith('main.employee') }}">{{ icon('users') }}<span class="lbl">Nhân viên</span></a>
-      <a href="{{ url_for('main.departments') }}" class="{{ 'active' if ep.startswith('main.department') }}">{{ icon('building') }}<span class="lbl">Phòng ban</span></a>
-      <a href="{{ url_for('main.attendance') }}" class="{{ 'active' if ep == 'main.attendance' }}">{{ icon('clock') }}<span class="lbl">Chấm công</span></a>
-      <a href="{{ url_for('main.report') }}" class="{{ 'active' if ep == 'main.report' }}">{{ icon('chart') }}<span class="lbl">Báo cáo</span></a>
-      <a href="{{ url_for('main.timesheets') }}" class="{{ 'active' if ep.startswith('main.timesheet') }}">{{ icon('clipboard-check') }}<span class="lbl">Chốt công</span>{% if nav_review %}<span class="count">{{ nav_review }}</span>{% endif %}</a>
-      <a href="{{ url_for('main.leaves') }}" class="{{ 'active' if ep.startswith('main.leave') }}">{{ icon('umbrella') }}<span class="lbl">Nghỉ phép</span>{% if nav_pending %}<span class="count">{{ nav_pending }}</span>{% endif %}</a>
-      <a href="{{ url_for('main.permissions_page') }}" class="{{ 'active' if ep == 'main.permissions_page' }}">{{ icon('key') }}<span class="lbl">Phân quyền</span></a>
-      <a href="{{ url_for('main.device') }}" class="{{ 'active' if ep == 'main.device' }}">{{ icon('cpu') }}<span class="lbl">Thiết bị</span></a>
-      <a href="{{ url_for('main.kiosk') }}" target="_blank">{{ icon('monitor') }}<span class="lbl">Kiosk ↗</span></a>
-      {% else %}
-      {% set mine_ts = ep == 'main.my_timesheet' or (ep.startswith('main.timesheet_') and request.view_args.emp_id == g.user.employee_id) %}
-      <a href="{{ url_for('main.my_timesheet') }}" class="{{ 'active' if mine_ts }}">{{ icon('clipboard-check') }}<span class="lbl">Bảng công của tôi</span>{% if nav_mine %}<span class="count">{{ nav_mine }}</span>{% endif %}</a>
-      {% if can('self.leave') or can('leaves.approve') %}
-      <a href="{{ url_for('main.leaves', status='all' if not can('leaves.approve') else 'pending') }}" class="{{ 'active' if ep.startswith('main.leave') }}">{{ icon('umbrella') }}<span class="lbl">{{ 'Nghỉ phép' if can('leaves.approve') else 'Đơn nghỉ của tôi' }}</span>{% if nav_pending %}<span class="count">{{ nav_pending }}</span>{% endif %}</a>
-      {% endif %}
-      {% if is_manager %}<div class="nav-label">Nhóm của tôi</div>{% endif %}
-      {% if can('timesheets.review') %}
-      <a href="{{ url_for('main.timesheets') }}" class="{{ 'active' if ep == 'main.timesheets' or (ep.startswith('main.timesheet_') and not mine_ts) }}">{{ icon('users') }}<span class="lbl">Duyệt bảng công</span>{% if nav_review %}<span class="count">{{ nav_review }}</span>{% endif %}</a>
-      {% endif %}
-      {% if can('employees.view') %}
-      <a href="{{ url_for('main.employees') }}" class="{{ 'active' if ep.startswith('main.employee') }}">{{ icon('users') }}<span class="lbl">Nhân viên</span></a>
-      {% endif %}
-      {% if can('attendance.view') %}
-      <a href="{{ url_for('main.attendance') }}" class="{{ 'active' if ep == 'main.attendance' }}">{{ icon('clock') }}<span class="lbl">Chấm công</span></a>
-      <a href="{{ url_for('main.report') }}" class="{{ 'active' if ep == 'main.report' }}">{{ icon('chart') }}<span class="lbl">Báo cáo</span></a>
-      {% endif %}
-      {% endif %}
+      {% set ns = namespace(team=false) %}
+      {% for m in nav_modules %}
+        {% if m.team and not ns.team %}{% set ns.team = true %}<div class="nav-label">Nhóm của tôi</div>{% endif %}
+        <a href="{{ m.url }}" class="{{ 'active' if m.active }}" title="{{ m.pages|map(attribute='label')|join(' · ') }}">{{ icon(m.icon) }}<span class="lbl">{{ m.label }}</span>{% if m.count %}<span class="count">{{ m.count }}</span>{% endif %}</a>
+      {% endfor %}
     </nav>
     <div class="sidebar-foot">
       <div class="clock-row">
         <span class="clock" id="clock"></span>
+        <a class="icon-btn {{ 'active' if ep.startswith('main.help') }}" href="{{ url_for('main.help_index') }}" title="Hướng dẫn sử dụng">{{ icon('help') }}</a>
+        {% if is_admin %}<a class="icon-btn" href="{{ url_for('main.kiosk') }}" target="_blank" title="Mở màn hình kiosk">{{ icon('monitor') }}</a>{% endif %}
         <button class="icon-btn" id="theme" title="Đổi giao diện sáng/tối">
           <svg class="i sun"><use href="#i-sun"/></svg><svg class="i moon"><use href="#i-moon"/></svg>
         </button>
@@ -76,10 +54,16 @@
       {% for category, message in get_flashed_messages(with_categories=true) %}
         <div class="flash {{ category }}">{{ icon('check' if category == 'success' else 'alert') }}<span>{{ message }}</span></div>
       {% endfor %}
+      {% if nav_tabs %}
+      <nav class="module-tabs seg" aria-label="Trang trong mục">
+        {% for t in nav_tabs %}<a href="{{ t.url }}" class="{{ 'on' if t.active }}" {{ 'aria-current="page"' if t.active }}>{{ t.label }}{% if t.count %}<span class="count">{{ t.count }}</span>{% endif %}</a>{% endfor %}
+      </nav>
+      {% endif %}
       {% block content %}{% endblock %}
     </main>
   </div>
 </div>
+{% include "_assistant.html" %}
 <script>
 (function () {
   const el = document.getElementById('clock');

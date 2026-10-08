@@ -8,7 +8,8 @@ LEAVE_TABLE = """
 CREATE TABLE IF NOT EXISTS {name} (
     id          INTEGER PRIMARY KEY,
     employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
-    leave_type  TEXT NOT NULL CHECK (leave_type IN ('annual', 'sick', 'unpaid', 'business', 'other')),
+    leave_type  TEXT NOT NULL CHECK (leave_type IN ('annual', 'sick', 'unpaid', 'business', 'wedding',
+                                                    'child_wedding', 'bereavement', 'maternity', 'other')),
     start_date  TEXT NOT NULL,
     end_date    TEXT NOT NULL,
     half_day    INTEGER NOT NULL DEFAULT 0,
@@ -41,6 +42,12 @@ CREATE TABLE IF NOT EXISTS {name} (
     UNIQUE (employee_id, month)
 );
 """
+
+# Cột hồ sơ mở rộng của employees (thêm bằng _migrate, kiểu TEXT)
+PROFILE_COLUMNS = ("id_number", "id_issue_date", "id_issue_place", "tax_code", "social_insurance_no",
+                   "bank_account", "bank_name", "hometown", "marital_status", "education",
+                   "emergency_name", "emergency_relation", "emergency_phone",
+                   "termination_date", "termination_reason")
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
@@ -112,6 +119,138 @@ CREATE TABLE IF NOT EXISTS timesheet_explanations (
     created_at    TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
     UNIQUE (timesheet_id, day)
 );
+
+-- Lịch làm việc: ngày lễ (hưởng lương), ngày nghỉ hoán đổi, ngày làm bù
+CREATE TABLE IF NOT EXISTS holidays (
+    day  TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    kind TEXT NOT NULL DEFAULT 'holiday' CHECK (kind IN ('holiday', 'off', 'makeup'))
+);
+
+-- Đơn trong ngày: đi muộn, về sớm, quên chấm công, ra ngoài, đăng ký làm thêm (OT)
+CREATE TABLE IF NOT EXISTS attendance_requests (
+    id          INTEGER PRIMARY KEY,
+    employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+    req_type    TEXT NOT NULL CHECK (req_type IN ('late', 'early', 'forgot', 'out', 'overtime')),
+    day         TEXT NOT NULL,
+    time_from   TEXT,
+    time_to     TEXT,
+    reason      TEXT,
+    status      TEXT NOT NULL DEFAULT 'pending'
+                CHECK (status IN ('pending', 'approved', 'rejected', 'cancelled')),
+    review_note TEXT,
+    reviewed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+    reviewed_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_attreq_emp_day ON attendance_requests(employee_id, day);
+
+-- Ca làm việc; gán cho phòng ban (áp dụng cả nhánh con) hoặc từng nhân viên
+CREATE TABLE IF NOT EXISTS shifts (
+    id            INTEGER PRIMARY KEY,
+    name          TEXT NOT NULL UNIQUE,
+    work_start    TEXT NOT NULL,
+    work_end      TEXT NOT NULL,
+    lunch_start   TEXT NOT NULL,
+    lunch_end     TEXT NOT NULL,
+    grace_minutes INTEGER NOT NULL DEFAULT 5,
+    work_days     TEXT NOT NULL DEFAULT '0,1,2,3,4'
+);
+
+-- Điều chỉnh số ngày phép năm (cộng / trừ thủ công), kèm lý do
+CREATE TABLE IF NOT EXISTS leave_adjustments (
+    id          INTEGER PRIMARY KEY,
+    employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+    year        INTEGER NOT NULL,
+    days        REAL NOT NULL,
+    note        TEXT NOT NULL,
+    created_by  INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_leave_adj_emp ON leave_adjustments(employee_id, year);
+
+-- Hàng đợi email: luồng nền gửi dần, mất mạng thì thử lại sau
+CREATE TABLE IF NOT EXISTS email_outbox (
+    id         INTEGER PRIMARY KEY,
+    recipient  TEXT NOT NULL,
+    subject    TEXT NOT NULL,
+    body       TEXT NOT NULL,
+    event      TEXT,
+    status     TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'sent', 'failed')),
+    attempts   INTEGER NOT NULL DEFAULT 0,
+    error      TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+    next_try   TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+    sent_at    TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_outbox_status ON email_outbox(status, next_try);
+
+-- Người phụ thuộc (giảm trừ gia cảnh khi tính thuế TNCN)
+CREATE TABLE IF NOT EXISTS dependents (
+    id          INTEGER PRIMARY KEY,
+    employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+    full_name   TEXT NOT NULL,
+    relation    TEXT NOT NULL,
+    dob         TEXT,
+    id_number   TEXT,
+    tax_code    TEXT,
+    deduct_from TEXT,
+    deduct_to   TEXT,
+    note        TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_dependents_emp ON dependents(employee_id);
+
+-- Giấy tờ đính kèm hồ sơ; file nằm trong DOCUMENT_DIR/<employee_id>/
+CREATE TABLE IF NOT EXISTS documents (
+    id          INTEGER PRIMARY KEY,
+    employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+    kind        TEXT NOT NULL,
+    title       TEXT NOT NULL,
+    filename    TEXT NOT NULL,
+    stored_name TEXT NOT NULL,
+    size        INTEGER NOT NULL DEFAULT 0,
+    uploaded_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_documents_emp ON documents(employee_id);
+
+-- Hợp đồng lao động; trạng thái hiệu lực / sắp hết hạn / hết hạn tính từ ngày khi xem
+CREATE TABLE IF NOT EXISTS contracts (
+    id               INTEGER PRIMARY KEY,
+    employee_id      INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+    number           TEXT,
+    type             TEXT NOT NULL CHECK (type IN ('probation', 'fixed', 'indefinite', 'seasonal')),
+    sign_date        TEXT,
+    start_date       TEXT NOT NULL,
+    end_date         TEXT,
+    position         TEXT,
+    salary           REAL NOT NULL DEFAULT 0,
+    insurance_salary REAL NOT NULL DEFAULT 0,
+    allowances       TEXT NOT NULL DEFAULT '[]',
+    note             TEXT,
+    document_id      INTEGER REFERENCES documents(id) ON DELETE SET NULL,
+    status           TEXT NOT NULL DEFAULT 'signed' CHECK (status IN ('signed', 'terminated')),
+    terminated_on    TEXT,
+    reminded_at      TEXT,
+    created_at       TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_contracts_emp ON contracts(employee_id, start_date);
+
+-- Quá trình công tác: vào làm, điều chuyển, đổi chức danh, thay đổi lương, nghỉ việc...
+CREATE TABLE IF NOT EXISTS employment_history (
+    id             INTEGER PRIMARY KEY,
+    employee_id    INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+    kind           TEXT NOT NULL,
+    effective_date TEXT NOT NULL,
+    from_value     TEXT,
+    to_value       TEXT,
+    decision_no    TEXT,
+    decided_by     TEXT,
+    note           TEXT,
+    created_by     INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at     TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_history_emp ON employment_history(employee_id, effective_date);
 """
 
 
@@ -142,8 +281,18 @@ def _migrate(conn):
     if "manager_id" not in cols:
         conn.execute("ALTER TABLE departments ADD COLUMN manager_id INTEGER "
                      "REFERENCES employees(id) ON DELETE SET NULL")
-    if "photo" not in {r["name"] for r in conn.execute("PRAGMA table_info(employees)")}:
+    if "shift_id" not in cols:
+        conn.execute("ALTER TABLE departments ADD COLUMN shift_id INTEGER "
+                     "REFERENCES shifts(id) ON DELETE SET NULL")
+    ecols = {r["name"] for r in conn.execute("PRAGMA table_info(employees)")}
+    if "photo" not in ecols:
         conn.execute("ALTER TABLE employees ADD COLUMN photo TEXT")
+    if "shift_id" not in ecols:
+        conn.execute("ALTER TABLE employees ADD COLUMN shift_id INTEGER "
+                     "REFERENCES shifts(id) ON DELETE SET NULL")
+    for col in PROFILE_COLUMNS:  # hồ sơ mở rộng & nghỉ việc
+        if col not in ecols:
+            conn.execute(f"ALTER TABLE employees ADD COLUMN {col} TEXT")
     # tài khoản nhân viên
     ucols = {r["name"] for r in conn.execute("PRAGMA table_info(users)")}
     if "role" not in ucols:
@@ -171,9 +320,9 @@ def _migrate(conn):
         )
         conn.execute("PRAGMA foreign_keys = ON")
 
-    # thêm loại đơn 'business' (công tác): SQLite không sửa được CHECK nên dựng lại bảng
+    # thêm loại đơn mới (công tác, kết hôn, tang, thai sản...): SQLite không sửa được CHECK nên dựng lại bảng
     ddl = conn.execute("SELECT sql FROM sqlite_master WHERE name = 'leave_requests'").fetchone()[0]
-    if "'business'" not in ddl:
+    if "'maternity'" not in ddl:
         conn.commit()
         conn.execute("PRAGMA foreign_keys = OFF")
         conn.executescript(

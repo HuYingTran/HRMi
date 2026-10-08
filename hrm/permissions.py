@@ -16,12 +16,16 @@ from .db import get_db
 PERMS = {
     "employees.view":    ("Xem hồ sơ nhân viên", "team", True, False),
     "employees.edit":    ("Sửa hồ sơ nhân viên", "team", False, False),
+    "employees.sensitive": ("Xem & sửa thông tin nhạy cảm (CCCD, tài khoản, lương, hợp đồng, giấy tờ)",
+                            "team", False, False),
     "attendance.view":   ("Xem chấm công ngày & báo cáo tháng", "team", True, False),
     "attendance.edit":   ("Thêm / xoá chấm công thủ công", "team", True, False),
     "leaves.approve":    ("Duyệt đơn nghỉ / công tác", "team", True, False),
+    "requests.approve":  ("Duyệt đơn trong ngày (muộn, sớm, quên chấm, OT)", "team", True, False),
     "timesheets.review": ("Duyệt & chốt bảng công", "team", True, False),
     "self.timesheet":    ("Xem & giải trình bảng công của mình", "self", True, True),
     "self.leave":        ("Tự tạo đơn nghỉ / công tác", "self", True, True),
+    "self.request":      ("Tự tạo đơn trong ngày / đăng ký OT", "self", True, True),
 }
 ROLES = {"manager": "Trưởng phòng", "employee": "Nhân viên"}
 LOCKED = {("employee", "self.timesheet"), ("manager", "self.timesheet")}  # luôn bật
@@ -127,6 +131,20 @@ def can(perm, employee_id=None):
     if not ctx["team"] or not ctx["settings"][("manager", perm)]:
         return False
     return employee_id is None or employee_id in ctx["team"]
+
+
+def can_sensitive(employee_id):
+    """Xem được thông tin nhạy cảm của nhân viên: admin, chính mình, hoặc có quyền nhóm."""
+    user = g.get("user")
+    if user is None:
+        return False
+    return (user["role"] == "admin" or (employee_id is not None and employee_id == user["employee_id"])
+            or can("employees.sensitive", employee_id))
+
+
+def can_edit_sensitive(employee_id):
+    """Sửa thông tin nhạy cảm, người phụ thuộc, giấy tờ của nhân viên (không tự sửa cho mình)."""
+    return is_admin() or (can("employees.edit", employee_id) and can("employees.sensitive", employee_id))
 
 
 def visible_ids(perm):

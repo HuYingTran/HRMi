@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon %}
+{% block title %}{{ topic.title }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><a class="hint" href="{{ url_for('main.help_index') }}">← Hướng dẫn</a> <span class="hint">· {{ topic.group }}</span>
+    <h1 style="margin-top:.2rem">{{ topic.title }}</h1></div>
+  {% if links %}<div class="actions" style="margin:0">
+    {% for l in links %}<a class="btn {{ 'primary' if loop.first }}" href="{{ l.url }}">{{ l.label }} {{ icon('arrow-right') }}</a>{% endfor %}
+  </div>{% endif %}
+</div>
+<div class="grid-2-1">
+  <article class="card accent help-body">{{ html }}</article>
+  <aside class="card">
+    <h2>{{ icon('help') }} Cùng chủ đề</h2>
+    {% if related %}
+    <ul class="help-list">
+      {% for t in related %}<li><a href="{{ url_for('main.help_topic', slug=t.slug) }}"><span>{{ t.title }}</span>{{ icon('arrow-right') }}</a></li>{% endfor %}
+    </ul>
+    {% else %}<p class="hint">Không có hướng dẫn khác trong nhóm này.</p>{% endif %}
+    {% if topic.ask %}
+    <h2 style="margin-top:1.4rem">Câu hỏi thường gặp</h2>
+    <ul class="help-list">{% for a in topic.ask %}<li><span class="hint" style="display:block;padding:.45rem 0">{{ a }}</span></li>{% endfor %}</ul>
+    {% endif %}
+  </aside>
+</div>
+{% endblock %}

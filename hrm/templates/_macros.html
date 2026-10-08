@@ -62,6 +62,10 @@
 
 {% macro day_status(info) -%}
   <span class="badge {{ info.status }}">{{ DAY_STATUSES[info.status] }}</span>
+  {%- if info.holiday %} <span class="faint">{{ info.holiday.name }}</span>{% endif %}
+  {%- if info.ot_hours %} <span class="badge ot plain" title="OT {{ OT_KINDS[info.ot_kind]|lower }}{{ ', ' ~ info.ot_night_hours|num ~ 'h ban đêm' if info.ot_night_hours }}">OT {{ info.ot_hours|num }}h</span>{% endif %}
+  {%- if info.ot_pending_hours %} <span class="badge pending plain" title="Làm thêm chưa có đơn đăng ký OT được duyệt">OT chưa duyệt {{ info.ot_pending_hours|num }}h</span>{% endif %}
+  {%- for k in info.excused %} <span class="badge approved plain">Có đơn {{ REQ_TYPES[k]|lower }}</span>{% endfor %}
   {%- if info.leave and info.status not in ('leave', 'business') %} <span class="badge {{ 'business' if info.leave.leave_type == 'business' else 'leave' }} plain">{{ LEAVE_TYPES[info.leave.leave_type] }}{% if info.leave.half_day %} ½{% endif %}</span>{% endif %}
   {%- if info.status == 'leave' %} <span class="faint">{{ LEAVE_TYPES[info.leave.leave_type] }}{% if info.leave.half_day %} · ½ ngày{% endif %}</span>{% endif %}
 {%- endmacro %}
@@ -73,5 +77,14 @@
 {% macro presence_legend() -%}
   <div class="legend presence-legend">
     {% for key, label in PRESENCE.items() %}<span><i class="presence {{ key }}"></i>{{ label }}</span>{% endfor %}
+  </div>
+{%- endmacro %}
+
+
+{% macro weekday_checks(selected, name='work_days') -%}
+  <div class="day-checks">
+  {%- for label in ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'] %}
+    <label class="day-check"><input type="checkbox" name="{{ name }}" value="{{ loop.index0 }}" {{ 'checked' if loop.index0 in selected }}><span>{{ label }}</span></label>
+  {%- endfor %}
   </div>
 {%- endmacro %}

@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon %}
+{% block title %}Thông tin công ty{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><h1>Thông tin công ty</h1>
+    <div class="sub">Dùng làm thông tin bên sử dụng lao động khi in hợp đồng.</div></div>
+</div>
+<form method="post" class="card accent" style="max-width:860px">
+  <div class="form-grid">
+    {% for k, label in FIELDS.items() %}
+    <div class="field {{ 'wide' if k in ('name', 'address', 'workplace') }}"><label>{{ label }}</label>
+      <input name="{{ k }}" value="{{ company[k] }}" maxlength="300" {{ 'class=mono' if k in ('tax_code', 'phone') }}
+             {% if k == 'workplace' %}placeholder="Để trống: dùng địa chỉ công ty"{% endif %}></div>
+    {% endfor %}
+  </div>
+  <div class="actions"><button class="btn primary">{{ icon('check') }} Lưu</button></div>
+</form>
+{% endblock %}

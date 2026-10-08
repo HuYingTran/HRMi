@@ -82,6 +82,42 @@
   </section>
 </div>
 
+{% if alerts.expiring or alerts.expired or alerts.birthdays or alerts.no_contract %}
+<section class="card accent section-gap">
+  <div class="card-head"><h2>{{ icon('clipboard-check') }} Nhắc việc nhân sự</h2><a href="{{ url_for('main.contracts') }}" class="hint">Hợp đồng →</a></div>
+  <div class="grid">
+    {% if alerts.expiring or alerts.expired %}
+    <div>
+      <ul class="events">
+        {% for c in alerts.expired %}
+        <li><div class="ev-body">{{ person({'id': c.employee_id, 'full_name': c.full_name, 'code': c.code, 'photo': c.photo}, P.CONTRACT_TYPES[c.type] ~ ' hết hạn ' ~ (c.end_date|d) ~ ', chưa ký tiếp') }}</div>
+          <span class="badge bad plain">Hết hạn</span>
+          <a class="btn small" href="{{ url_for('main.contract_new', emp_id=c.employee_id) }}">Ký tiếp</a></li>
+        {% endfor %}
+        {% for c in alerts.expiring %}
+        <li><div class="ev-body">{{ person({'id': c.employee_id, 'full_name': c.full_name, 'code': c.code, 'photo': c.photo}, P.CONTRACT_TYPES[c.type] ~ ' hết hạn ' ~ (c.end_date|d)) }}</div>
+          <span class="badge warn plain">còn {{ c.days_left }} ngày</span>
+          <a class="btn small" href="{{ url_for('main.contract_new', emp_id=c.employee_id) }}">Ký tiếp</a></li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+    <div>
+      {% if alerts.birthdays %}
+      <h3 class="hint" style="margin:0 0 .5rem">Sinh nhật tháng {{ today.month }}</h3>
+      <div style="display:flex;flex-wrap:wrap;gap:.75rem">
+        {% for e in alerts.birthdays %}{{ person(e, (e.dob|d)[:5] ~ (' · hôm nay 🎂' if e.dob[5:] == today.isoformat()[5:] else '')) }}{% endfor %}
+      </div>
+      {% endif %}
+      {% if alerts.no_contract %}
+      <p class="hint" style="margin-top:1rem">{{ icon('alert') }} {{ alerts.no_contract|length }} nhân viên chưa có hợp đồng:
+        {% for e in alerts.no_contract[:6] %}<a href="{{ url_for('main.employee_detail', emp_id=e.id) }}#contracts">{{ e.full_name }}</a>{{ ', ' if not loop.last }}{% endfor %}{% if alerts.no_contract|length > 6 %}…{% endif %}</p>
+      {% endif %}
+    </div>
+  </div>
+</section>
+{% endif %}
+
 <div class="grid section-gap">
   <section class="card">
     <div class="card-head">

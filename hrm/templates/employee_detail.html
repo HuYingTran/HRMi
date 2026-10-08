@@ -17,10 +17,10 @@
 
 {% block content %}
 {% set worked = days|selectattr('first_in')|rejectattr('status', 'equalto', 'ot')|list %}
-{% set ot = days|selectattr('status', 'equalto', 'ot')|list %}
+{% set ot = days|selectattr('ot_hours')|list %}
 {% set METHOD = {'rfid': 'Thẻ', 'fingerprint': 'Vân tay', 'manual': 'Thủ công'} %}
 
-<section class="card">
+<section class="card accent">
   <div class="profile-head">
     {{ avatar(emp, 'xl') }}
     <div class="info">
@@ -29,7 +29,9 @@
       <div class="tags">
         <span class="chip mono">{{ emp.code }}</span>
         {% if emp.department %}{{ dept(emp.department, emp.department_id) }}{% endif %}
-        <span class="badge {{ emp.status }}">{{ 'Đang làm' if emp.status == 'active' else 'Đã nghỉ' }}</span>
+        <span class="badge {{ emp.status }}">{{ 'Đang làm' if emp.status == 'active' else 'Đã nghỉ' }}{% if emp.termination_date %} từ {{ emp.termination_date|d }}{% endif %}</span>
+        {% if emp.termination_reason %}<span class="hint">{{ P.TERMINATION_REASONS.get(emp.termination_reason, '') }}</span>{% endif %}
+        {% if contract %}<a class="chip on" href="#contracts" title="Hợp đồng hiện tại">{{ P.CONTRACT_TYPES[contract.type] }}{% if contract.end_date %} · đến {{ contract.end_date|d }}{% endif %}</a>{% endif %}
       </div>
     </div>
     <div class="actions" style="margin:0">
@@ -71,6 +73,15 @@
       <dt>SĐT</dt><dd class="mono">{{ emp.phone or '—' }}</dd>
       <dt>Email</dt><dd>{{ emp.email or '—' }}</dd>
       <dt>Địa chỉ</dt><dd>{{ emp.address or '—' }}</dd>
+      {% if emp.hometown %}<dt>Quê quán</dt><dd>{{ emp.hometown }}</dd>{% endif %}
+      {% if emp.marital_status or emp.education %}<dt>Hôn nhân · học vấn</dt><dd>{{ emp.marital_status or '—' }} · {{ emp.education or '—' }}</dd>{% endif %}
+      {% if emp.emergency_name or emp.emergency_phone %}<dt>Khẩn cấp</dt><dd>{{ emp.emergency_name or '' }}{% if emp.emergency_relation %} <span class="faint">({{ emp.emergency_relation }})</span>{% endif %} <span class="mono">{{ emp.emergency_phone or '' }}</span></dd>{% endif %}
+      {% if sensitive %}
+      <dt>{{ icon('lock') }} CCCD</dt><dd class="mono">{{ emp.id_number or '—' }}{% if emp.id_issue_date %} <span class="faint">· cấp {{ emp.id_issue_date|d }}{% if emp.id_issue_place %}, {{ emp.id_issue_place }}{% endif %}</span>{% endif %}</dd>
+      <dt>MST · BHXH</dt><dd class="mono">{{ emp.tax_code or '—' }} · {{ emp.social_insurance_no or '—' }}</dd>
+      <dt>Tài khoản</dt><dd><span class="mono">{{ emp.bank_account or '—' }}</span>{% if emp.bank_name %} <span class="faint">· {{ emp.bank_name }}</span>{% endif %}</dd>
+      {% if contract %}<dt>Lương HĐ</dt><dd class="mono">{{ contract.salary|money }}{% if contract.allowance_total %} <span class="faint">+ {{ contract.allowance_total|money }} phụ cấp</span>{% endif %}</dd>{% endif %}
+      {% endif %}
       {% if is_admin %}
       <dt id="account">Đăng nhập</dt>
       <dd>
@@ -119,17 +130,37 @@
     </div>
   </section>
 
-  <section class="card">
+  <section class="card" id="leave">
     <h2>{{ icon('umbrella') }} Phép {{ today.year }}</h2>
     <div style="display:flex;align-items:center;gap:1.25rem;flex-wrap:wrap">
-      <div class="balance-ring" style="--p:{{ ((balance.remaining / balance.quota) * 100)|round if balance.quota else 0 }}">
-        <div><b>{{ balance.remaining|num }}</b><small>/ {{ balance.quota|num }} ngày</small></div>
+      <div class="balance-ring" style="--p:{{ ((balance.remaining / balance.quota) * 100)|round if balance.quota > 0 else 0 }}">
+        <div><b>{{ balance.remaining|round(2)|num }}</b><small>/ {{ balance.quota|round(2)|num }} ngày</small></div>
       </div>
       <dl class="dl">
+        <dt title="Định mức gốc trong hồ sơ">Định mức</dt><dd class="mono">{{ balance.base|num }}{% if balance.seniority %} <span class="hint">+{{ balance.seniority }} thâm niên</span>{% endif %}</dd>
+        {% if balance.earned != balance.full %}<dt>{{ 'Đã cộng dồn' if balance.accrual == 'month' else 'Theo tỉ lệ' }}</dt><dd class="mono">{{ balance.earned|num }}{% if balance.accrual != 'month' %} <span class="hint">({{ balance.months }} tháng)</span>{% endif %}</dd>{% endif %}
+        {% if balance.carry_in %}<dt>Năm trước chuyển sang</dt><dd class="mono">{{ balance.carry_in|num }}
+          <span class="hint">{% if balance.carry_expired %}· hết hạn {{ balance.carry_expired|num }}{% else %}· còn {{ balance.carry_left|num }}, hạn {{ balance.carry_expiry|d }}{% endif %}</span></dd>{% endif %}
+        {% if balance.adjust %}<dt>Điều chỉnh</dt><dd class="mono">{{ '%+g'|format(balance.adjust) }}</dd>{% endif %}
         <dt>Đã nghỉ</dt><dd class="mono">{{ balance.used|num }}</dd>
         <dt>Chờ duyệt</dt><dd class="mono">{{ balance.pending|num }}</dd>
       </dl>
     </div>
+    {% if adjustments %}
+    <ul class="events" style="margin-top:.8rem">
+      {% for a in adjustments %}<li><time class="mono">{{ '%+g'|format(a.days) }}</time><div class="ev-body">{{ a.note }}<small>{{ a.username or '' }} · {{ a.created_at[:10]|d }}</small></div></li>{% endfor %}
+    </ul>
+    {% endif %}
+    {% if is_admin %}
+    <details style="margin-top:.8rem"><summary class="btn link">Điều chỉnh phép</summary>
+      <form method="post" action="{{ url_for('main.employee_leave_adjust', emp_id=emp.id) }}" class="toolbar" style="margin:.6rem 0 0;align-items:flex-end">
+        <div class="field" style="min-width:90px"><label>Số ngày (+/−)</label><input name="days" required inputmode="decimal" placeholder="+1 hoặc -0.5" style="width:7rem"></div>
+        <div class="field grow"><label>Lý do</label><input name="note" required maxlength="200" placeholder="VD: thưởng phép, chuyển từ hệ thống cũ"></div>
+        <button class="btn small primary">{{ icon('check') }} Lưu</button>
+      </form>
+    </details>
+    {% endif %}
+    <p class="hint" style="margin-bottom:0">{{ icon('clock') }} Giờ làm: {{ schedule.SHIFT_NAME or 'Mặc định' }} · {{ schedule_label(schedule) }}</p>
   </section>
 </div>
 
@@ -145,7 +176,7 @@
     <div class="stat info"><div class="top">Công tác</div><div class="value">{{ days|selectattr('status', 'equalto', 'business')|list|length }}</div></div>
     <div class="stat leave"><div class="top">Nghỉ phép</div><div class="value">{{ days|selectattr('status', 'equalto', 'leave')|list|length }}</div></div>
     <div class="stat bad"><div class="top">Vắng</div><div class="value">{{ days|selectattr('status', 'equalto', 'absent')|list|length }}</div></div>
-    <div class="stat ot"><div class="top">OT</div><div class="value">{{ ot|length }}<small> · {{ (ot|sum(attribute='hours'))|round(1)|num }}h</small></div></div>
+    <div class="stat ot"><div class="top">OT</div><div class="value">{{ ot|length }}<small> · {{ (ot|sum(attribute='ot_hours'))|round(1)|num }}h</small></div></div>
     <div class="stat"><div class="top">Giờ công</div><div class="value">{{ (worked|sum(attribute='hours'))|round(1)|num }}<small> h</small></div></div>
   </div>
   <div class="split">
@@ -155,7 +186,7 @@
         {% for _ in range(days[0].date.weekday()) %}<div></div>{% endfor %}
         {% for d in days %}
           <div class="d {{ d.status }} {{ 'today' if d.date == today }}"
-               title="{{ d.date|d }} · {{ DAY_STATUSES[d.status] }}{% if d.first_in %} · {{ d.first_in|hm }}–{{ d.last_out|hm or '?' }}{% if d.late_minutes %} · muộn {{ d.late_minutes }}′{% endif %}{% endif %}">
+               title="{{ d.date|d }} · {{ DAY_STATUSES[d.status] }}{% if d.holiday %} · {{ d.holiday.name }}{% endif %}{% if d.ot_hours %} · OT {{ d.ot_hours|num }}h{% endif %}{% if d.first_in %} · {{ d.first_in|hm }}–{{ d.last_out|hm or '?' }}{% if d.late_minutes %} · muộn {{ d.late_minutes }}′{% endif %}{% endif %}">
             {{ d.date.day }}{% if d.first_in %}<span class="t">{{ d.first_in|hm }}</span>{% endif %}
           </div>
         {% endfor %}
@@ -167,6 +198,7 @@
         <span><i style="background:var(--c-leave)"></i>Phép</span>
         <span><i style="background:var(--c-bad)"></i>Vắng</span>
         <span><i style="background:var(--c-ot)"></i>OT</span>
+        <span><i class="holiday-swatch"></i>Lễ</span>
       </div>
     </div>
     <div>
@@ -216,6 +248,8 @@
   {% endif %}
 </div>
 
+{% include "_profile_hr.html" %}
+
 {% if is_admin %}
 <form method="post" action="{{ url_for('main.employee_delete', emp_id=emp.id) }}" style="text-align:right;margin-top:1.1rem"
       onsubmit='return confirm({{ ("Xoá vĩnh viễn " ~ emp.full_name ~ " cùng toàn bộ chấm công và nghỉ phép? Nếu nhân viên nghỉ việc, nên đổi trạng thái thay vì xoá.")|tojson }})'>
@@ -226,6 +260,16 @@
 
 {% block scripts %}
 <script>
+(function () {
+  // biểu mẫu quyết định: chỉ hiện ô liên quan tới loại đang chọn
+  const kind = document.getElementById('decision-kind');
+  if (!kind) return;
+  const sync = () => document.querySelectorAll('#decision-form [data-for]').forEach(el => {
+    el.hidden = !el.dataset.for.split(' ').includes(kind.value);
+  });
+  kind.addEventListener('change', sync);
+  sync();
+})();
 (function () {
   const box = document.getElementById('task');
   const msg = document.getElementById('task-msg');

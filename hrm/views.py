@@ -10,7 +10,7 @@ from flask import (Blueprint, Response, abort, current_app, flash, g, jsonify,
                    redirect, render_template, request, send_from_directory, session, url_for)
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from . import permissions, photos, services, timesheet
+from . import navigation, notify, permissions, photos, profiles, services, timesheet, workrules
 from .db import get_db
 from .services import ServiceError
 
@@ -18,7 +18,7 @@ bp = Blueprint("main", __name__)
 
 EMPLOYEE_FIELDS = ("code", "full_name", "gender", "dob", "phone", "email", "address",
                    "department_id", "position", "hire_date", "status",
-                   "annual_leave_days", "rfid_uid")
+                   "annual_leave_days", "rfid_uid", "shift_id")
 
 
 def hardware():
@@ -27,6 +27,13 @@ def hardware():
 
 def cfg():
     return current_app.config
+
+
+def mail_wake():
+    """Báo luồng gửi email có thư mới (nếu đang chạy)."""
+    mailer = current_app.extensions.get("mailer")
+    if mailer:
+        mailer.wake()
 
 
 # ---------------------------------------------------------------- đăng nhập
@@ -47,6 +54,9 @@ ENDPOINT_PERMS = {
     "main.leaves": ("leaves.approve", "self.leave"),
     "main.leave_new": ("leaves.approve", "self.leave"),
     "main.leave_action": ("leaves.approve", "self.leave"),
+    "main.requests_list": ("requests.approve", "self.request"),
+    "main.request_new": ("requests.approve", "self.request"),
+    "main.request_action": ("requests.approve", "self.request"),
     "main.timesheets": ("timesheets.review",),
     **{f"main.timesheet_{x}": ("self.timesheet", "timesheets.review")
        for x in ("detail", "explain", "explain_delete", "submit", "review", "return", "confirm", "reopen")},
@@ -99,6 +109,8 @@ def inject_shell():
     ctx = {"is_admin": is_admin(), "is_manager": permissions.is_manager(),
            "nav_pending": _count("SELECT COUNT(*) FROM leave_requests WHERE status = 'pending' "
                                  "AND employee_id{ids}", permissions.visible_ids("leaves.approve")),
+           "nav_requests": _count("SELECT COUNT(*) FROM attendance_requests WHERE status = 'pending' "
+                                  "AND employee_id{ids}", permissions.visible_ids("requests.approve")),
            "nav_review": _count("SELECT COUNT(*) FROM timesheets WHERE status = 'submitted' "
                                 "AND employee_id{ids}", permissions.visible_ids("timesheets.review"))}
     if is_admin():
@@ -106,6 +118,7 @@ def inject_shell():
     if g.user["employee_id"]:
         ctx["nav_mine"] = db.execute("SELECT COUNT(*) FROM timesheets WHERE employee_id = ? "
                                      "AND status IN ('sent', 'returned')", (g.user["employee_id"],)).fetchone()[0]
+    ctx["nav_modules"], ctx["nav_tabs"] = navigation.build(ctx)
     return ctx
 
 
@@ -213,6 +226,7 @@ def dashboard():
             db, today - timedelta(days=today.weekday() + 7),
             today + timedelta(days=6 - today.weekday()), cfg(), today=today),
         events=list(reversed(hardware().events_after(0)))[:8],
+        alerts=profiles.hr_alerts(db, today), P=profiles,
         hw=hardware().online(),
     )
 
@@ -233,15 +247,22 @@ def _get_employee(emp_id):
     return emp
 
 
-def _employee_form():
-    data = {f: (request.form.get(f) or "").strip() for f in EMPLOYEE_FIELDS}
+def _form_fields(emp_id):
+    """Các cột hồ sơ người đang đăng nhập được sửa (trường nhạy cảm cần quyền riêng)."""
+    fields = EMPLOYEE_FIELDS + profiles.EXTRA_FIELDS
+    if permissions.can_edit_sensitive(emp_id):
+        fields += profiles.SENSITIVE_FIELDS
+    return fields
+
+
+def _employee_form(fields, current_status="active"):
+    data = {f: (request.form.get(f) or "").strip() for f in fields}
+    data["status"] = current_status  # đổi trạng thái qua quy trình nghỉ việc / nhận lại
     errors = []
     if not data["code"]:
         errors.append("Mã nhân viên là bắt buộc.")
     if not data["full_name"]:
         errors.append("Họ tên là bắt buộc.")
-    if data["status"] not in ("active", "inactive"):
-        data["status"] = "active"
     try:
         data["annual_leave_days"] = float(data["annual_leave_days"] or cfg()["DEFAULT_ANNUAL_LEAVE_DAYS"])
         if data["annual_leave_days"] < 0:
@@ -249,9 +270,12 @@ def _employee_form():
     except ValueError:
         errors.append("Số ngày phép năm không hợp lệ.")
     data["department_id"] = int(data["department_id"]) if data["department_id"].isdigit() else None
+    data["shift_id"] = int(data["shift_id"]) if data["shift_id"].isdigit() else None
     data["rfid_uid"] = data["rfid_uid"].replace(" ", "").replace(":", "").upper()
-    for key in ("gender", "dob", "phone", "email", "address", "position", "hire_date", "rfid_uid"):
-        data[key] = data[key] or None
+    for key in ("gender", "dob", "phone", "email", "address", "position", "hire_date", "rfid_uid",
+                *profiles.EXTRA_FIELDS, *profiles.SENSITIVE_FIELDS):
+        if key in data:
+            data[key] = data[key] or None
     return data, errors
 
 
@@ -317,7 +341,7 @@ def photo(name):
 
 @bp.app_errorhandler(413)
 def too_large(_exc):
-    flash("Ảnh quá lớn (tối đa 8 MB).", "error")
+    flash("File quá lớn (tối đa 8 MB).", "error")
     return redirect(request.referrer or url_for("main.employees"))
 
 
@@ -327,15 +351,17 @@ def employee_new():
     emp = {"status": "active", "annual_leave_days": cfg()["DEFAULT_ANNUAL_LEAVE_DAYS"],
            "hire_date": date.today().isoformat()}
     if request.method == "POST":
-        data, errors = _employee_form()
+        data, errors = _employee_form(_form_fields(None))
         if not errors:
             db = get_db()
             try:
                 cur = db.execute(
-                    f"INSERT INTO employees ({', '.join(EMPLOYEE_FIELDS)}) "
-                    f"VALUES ({', '.join('?' * len(EMPLOYEE_FIELDS))})",
-                    [data[f] for f in EMPLOYEE_FIELDS],
+                    f"INSERT INTO employees ({', '.join(data)}) VALUES ({', '.join('?' * len(data))})",
+                    list(data.values()),
                 )
+                if data["hire_date"]:
+                    profiles.add_history(db, cur.lastrowid, "hire", data["hire_date"], None,
+                                         data["position"], user_id=g.user["id"], commit=False)
                 db.commit()
                 _apply_photo(db, cur.lastrowid, None)
                 flash("Đã tạo hồ sơ.", "success")
@@ -345,7 +371,8 @@ def employee_new():
         for e in errors:
             flash(e, "error")
         emp = data
-    return render_template("employee_form.html", emp=emp, departments=_departments(), is_new=True)
+    return render_template("employee_form.html", emp=emp, departments=_departments(), is_new=True,
+                           shifts=workrules.shifts(get_db()), sensitive=True, P=profiles)
 
 
 @bp.route("/employees/<int:emp_id>/edit", methods=["GET", "POST"])
@@ -355,16 +382,15 @@ def employee_edit(emp_id):
     if not can("employees.edit", emp_id):
         abort(403)
     if request.method == "POST":
-        data, errors = _employee_form()
+        data, errors = _employee_form(_form_fields(emp_id), emp["status"])
         if not errors:
             db = get_db()
             try:
                 db.execute(
-                    f"UPDATE employees SET {', '.join(f + ' = ?' for f in EMPLOYEE_FIELDS)} "
-                    "WHERE id = ?",
-                    [data[f] for f in EMPLOYEE_FIELDS] + [emp_id],
+                    f"UPDATE employees SET {', '.join(f + ' = ?' for f in data)} WHERE id = ?",
+                    [*data.values(), emp_id],
                 )
-                db.commit()
+                profiles.track_changes(db, emp, data, g.user["id"])
                 _apply_photo(db, emp_id, emp["photo"])
                 flash("Đã lưu.", "success")
                 return redirect(url_for("main.employee_detail", emp_id=emp_id))
@@ -373,7 +399,9 @@ def employee_edit(emp_id):
         for e in errors:
             flash(e, "error")
         emp = {**dict(emp), **data}
-    return render_template("employee_form.html", emp=emp, departments=_departments(), is_new=False)
+    return render_template("employee_form.html", emp=emp, departments=_departments(), is_new=False,
+                           shifts=workrules.shifts(get_db()),
+                           sensitive=permissions.can_edit_sensitive(emp_id), P=profiles)
 
 
 @bp.route("/me")
@@ -398,6 +426,8 @@ def employee_detail(emp_id):
 def _employee_page(emp_id):
     emp = _get_employee(emp_id)
     db = get_db()
+    sensitive = permissions.can_sensitive(emp_id)
+    contracts = profiles.contracts_of(db, emp_id) if sensitive else []
     month = request.args.get("month") or date.today().strftime("%Y-%m")
     try:
         year, mon = (int(x) for x in month.split("-"))
@@ -420,9 +450,33 @@ def _employee_page(emp_id):
         is_self=emp_id == g.user["employee_id"],
         org=timesheet.org_around(db, emp_id),
         account=db.execute("SELECT * FROM users WHERE employee_id = ?", (emp_id,)).fetchone(),
-        balance=services.leave_balance(db, emp, date.today().year),
+        balance=services.leave_balance(db, emp, date.today().year, cfg()),
+        adjustments=db.execute("SELECT a.*, u.username FROM leave_adjustments a LEFT JOIN users u "
+                               "ON u.id = a.created_by WHERE a.employee_id = ? AND a.year = ? "
+                               "ORDER BY a.id DESC", (emp_id, date.today().year)).fetchall(),
+        schedule=workrules.schedules(db, cfg()).schedule_for(emp),
+        sensitive=sensitive, edit_sensitive=permissions.can_edit_sensitive(emp_id),
+        contracts=contracts, contract=profiles.current_contract(contracts),
+        history=profiles.history_of(db, emp_id, include_salary=sensitive),
+        dependents=profiles.dependents_of(db, emp_id) if sensitive else [],
+        documents=profiles.documents_of(db, emp_id) if sensitive else [],
+        P=profiles, departments=_departments() if is_admin() else [],
+        schedule_label=workrules.schedule_label,
         hw=hardware().status(), task=hardware().task_for(emp_id),
     )
+
+
+@bp.route("/employees/<int:emp_id>/leave-adjust", methods=["POST"])
+@login_required
+def employee_leave_adjust(emp_id):
+    _get_employee(emp_id)
+    try:
+        services.adjust_leave(get_db(), emp_id, date.today().year, request.form.get("days", ""),
+                              request.form.get("note"), g.user["id"])
+        flash("Đã điều chỉnh phép năm.", "success")
+    except ServiceError as exc:
+        flash(str(exc), "error")
+    return redirect(url_for("main.employee_detail", emp_id=emp_id) + "#leave")
 
 
 @bp.route("/employees/<int:emp_id>/delete", methods=["POST"])
@@ -435,6 +489,7 @@ def employee_delete(emp_id):
     db.execute("DELETE FROM employees WHERE id = ?", (emp_id,))
     db.commit()
     photos.delete_photo(cfg()["PHOTO_DIR"], emp["photo"])
+    profiles.delete_employee_files(cfg()["DOCUMENT_DIR"], emp_id)
     flash(f"Đã xoá {emp['full_name']}.", "success")
     return redirect(url_for("main.employees"))
 
@@ -512,6 +567,10 @@ def departments():
         dept_id = request.form.get("id", type=int)
         parent_id = request.form.get("parent_id", type=int)
         manager_id = request.form.get("manager_id", type=int)
+        shift_id = request.form.get("shift_id", type=int)
+        if dept_id and "shift_id" not in request.form:  # form không có ô ca: giữ ca đang gán
+            old = next((r for r in rows if r["id"] == dept_id), None)
+            shift_id = old["shift_id"] if old else None
         if not name:
             flash("Thiếu tên phòng ban.", "error")
         elif dept_id and parent_id and (parent_id == dept_id or parent_id in _descendants(rows, dept_id)):
@@ -519,11 +578,11 @@ def departments():
         else:
             try:
                 if dept_id:
-                    db.execute("UPDATE departments SET name = ?, parent_id = ?, manager_id = ? "
-                               "WHERE id = ?", (name, parent_id, manager_id, dept_id))
+                    db.execute("UPDATE departments SET name = ?, parent_id = ?, manager_id = ?, shift_id = ? "
+                               "WHERE id = ?", (name, parent_id, manager_id, shift_id, dept_id))
                 else:
-                    db.execute("INSERT INTO departments (name, parent_id, manager_id) VALUES (?, ?, ?)",
-                               (name, parent_id, manager_id))
+                    db.execute("INSERT INTO departments (name, parent_id, manager_id, shift_id) "
+                               "VALUES (?, ?, ?, ?)", (name, parent_id, manager_id, shift_id))
                 db.commit()
                 flash("Đã lưu.", "success")
             except sqlite3.IntegrityError:
@@ -557,7 +616,8 @@ def departments():
         return [{**d, "children": build(d["id"])} for d in children.get(parent_id, [])]
 
     return render_template("departments.html", departments=depts, tree=build(None),
-                           employees=employees, unassigned=members.get(None, []))
+                           employees=employees, unassigned=members.get(None, []),
+                           shifts=workrules.shifts(db))
 
 
 @bp.route("/departments/<int:dept_id>/delete", methods=["POST"])
@@ -649,8 +709,10 @@ def _scoped(rows, perm):
 @login_required
 def report():
     month, year, mon = _report_month()
-    rows = _scoped(services.monthly_report(get_db(), year, mon, cfg()), "attendance.view")
-    return render_template("report.html", rows=rows, month=month)
+    db = get_db()
+    rows = _scoped(services.monthly_report(db, year, mon, cfg()), "attendance.view")
+    return render_template("report.html", rows=rows, month=month,
+                           warnings=services.ot_limits(db, year, mon, rows, cfg()))
 
 
 @bp.route("/report.csv")
@@ -663,13 +725,16 @@ def report_csv():
     w = csv.writer(buf)
     w.writerow(["Mã NV", "Họ tên", "Phòng ban", "Ngày công chuẩn", "Ngày đi làm", "Số lần muộn",
                 "Phút muộn", "Phút về sớm", "Thiếu giờ ra", "Ngày công tác", "Ngày nghỉ phép",
-                "Vắng", "Tổng giờ", "Ngày OT", "Giờ OT"])
+                "Vắng", "Tổng giờ", "Ngày OT", "Giờ OT", "Ngày lễ", "OT ngày thường", "OT ngày nghỉ",
+                "OT ngày lễ", "OT ban đêm", "Giờ OT quy đổi", "OT chưa duyệt", "Muộn/sớm có đơn"])
     for r in rows:
         e = r["employee"]
         w.writerow([e["code"], e["full_name"], e["department"] or "", r["workdays"], r["present"],
                     r["late"], r["late_minutes"], r["early_minutes"], r["missing_out"],
                     r["business"], r["leave_days"], r["absent"], r["hours"],
-                    r["ot_days"], r["ot_hours"]])
+                    r["ot_days"], r["ot_hours"], r["holidays"], r["ot_weekday_hours"],
+                    r["ot_weekend_hours"], r["ot_holiday_hours"], r["ot_night_hours"],
+                    r["ot_weighted_hours"], r["ot_pending_hours"], r["excused"]])
     return Response(buf.getvalue(), mimetype="text/csv",
                     headers={"Content-Disposition": f"attachment; filename=cham-cong-{month}.csv"})
 
@@ -719,11 +784,13 @@ def leave_new():
         if allowed is not None and request.form.get("employee_id", type=int) not in allowed:
             abort(403)
         try:
-            services.create_leave(
+            leave_id = services.create_leave(
                 db, request.form.get("employee_id", type=int), form.get("leave_type"),
                 form.get("start_date"), form.get("end_date"), bool(form.get("half_day")),
                 form.get("reason", "").strip() or None, cfg(),
             )
+            if notify.leave_created(db, leave_id):
+                mail_wake()
             flash("Đã gửi đơn.", "success")
             return redirect(url_for("main.leaves"))
         except ServiceError as exc:
@@ -747,12 +814,11 @@ def leave_action(leave_id, action):
     if not (can("leaves.approve", leave["employee_id"]) or own_cancel):
         abort(403)
     try:
-        if action == "approve":
-            services.review_leave(db, leave_id, True, note)
-            flash("Đã duyệt.", "success")
-        elif action == "reject":
-            services.review_leave(db, leave_id, False, note)
-            flash("Đã từ chối.", "success")
+        if action in ("approve", "reject"):
+            services.review_leave(db, leave_id, action == "approve", note)
+            if notify.leave_reviewed(db, leave_id):
+                mail_wake()
+            flash("Đã duyệt." if action == "approve" else "Đã từ chối.", "success")
         elif action == "cancel":
             services.cancel_leave(db, leave_id)
             flash("Đã huỷ đơn.", "success")

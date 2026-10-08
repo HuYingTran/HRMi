@@ -1,0 +1,25 @@
+{# Trợ lý HRMi: nút chat góc phải dưới, có mặt trên mọi trang sau khi đăng nhập. #}
+{% from "_macros.html" import icon %}
+<div class="asst" id="asst" data-api="{{ url_for('main.api_assistant') }}" data-page="{{ request.endpoint or '' }}"
+     data-key="hrmi.asst.{{ g.user.id }}">
+  <button type="button" class="asst-fab" id="asst-fab" aria-expanded="false" aria-controls="asst-panel"
+          title="Trợ lý HRMi (phím ?)">{{ icon('chat', 'lg') }}<span class="sr">Mở trợ lý</span></button>
+  <section class="asst-panel" id="asst-panel" role="dialog" aria-label="Trợ lý HRMi" hidden>
+    <header class="asst-head">
+      <span class="asst-mark">{{ icon('chat') }}</span>
+      <div class="asst-who"><b>Trợ lý HRMi</b><small><span class="dot ok"></span> Offline · tra cứu hướng dẫn</small></div>
+      <a class="icon-btn" href="{{ url_for('main.help_index') }}" title="Tất cả hướng dẫn">{{ icon('help') }}</a>
+      <button type="button" class="icon-btn" id="asst-clear" title="Xoá hội thoại">{{ icon('trash') }}</button>
+      <button type="button" class="icon-btn" id="asst-close" title="Đóng (Esc)">{{ icon('x') }}</button>
+    </header>
+    <div class="asst-log" id="asst-log" aria-live="polite"></div>
+    <div class="asst-sugg" id="asst-sugg">
+      {% for s in assistant_suggestions(request.endpoint) %}<button type="button">{{ s }}</button>{% endfor %}
+    </div>
+    <form class="asst-input" id="asst-form" autocomplete="off">
+      <input id="asst-q" maxlength="500" placeholder="Hỏi cách dùng, ví dụ: xin nghỉ nửa ngày" aria-label="Câu hỏi">
+      <button class="btn primary small" title="Gửi">{{ icon('send') }}</button>
+    </form>
+  </section>
+</div>
+<script src="{{ url_for('static', filename='assistant.js') }}" defer></script>

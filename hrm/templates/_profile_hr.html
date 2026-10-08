@@ -1,0 +1,157 @@
+{# Phần nhân sự của trang hồ sơ: hợp đồng, quá trình công tác, người phụ thuộc, giấy tờ.
+   Được include từ employee_detail.html (dùng chung biến emp, contracts, history, ...). #}
+{% from "_macros.html" import icon, empty %}
+
+{% if sensitive %}
+<section class="card section-gap" id="contracts">
+  <div class="card-head">
+    <h2>{{ icon('clipboard-check') }} Hợp đồng lao động</h2>
+    {% if is_admin %}<a class="btn small primary" href="{{ url_for('main.contract_new', emp_id=emp.id) }}">{{ icon('plus') }} Hợp đồng mới</a>{% endif %}
+  </div>
+  {% if contracts %}
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Số</th><th>Loại</th><th>Thời hạn</th><th class="num">Lương</th><th class="num">Phụ cấp</th><th>Trạng thái</th><th></th></tr></thead>
+      <tbody>
+      {% for c in contracts %}
+        <tr>
+          <td class="mono">{{ c.number or '—' }}{% if c.position %}<div class="hint">{{ c.position }}</div>{% endif %}</td>
+          <td>{{ P.CONTRACT_TYPES[c.type] }}</td>
+          <td class="mono" style="font-size:.85rem">{{ c.start_date|d }} → {{ (c.terminated_on if c.state == 'terminated' else c.end_date)|d or 'không thời hạn' }}</td>
+          <td class="num mono">{{ c.salary|money }}{% if c.insurance_salary != c.salary %}<div class="hint" title="Lương đóng BHXH">BH {{ c.insurance_salary|money }}</div>{% endif %}</td>
+          <td class="num mono" title="{{ c.allowances|map(attribute='name')|join(', ') }}">{{ c.allowance_total|money if c.allowances else '—' }}</td>
+          <td><span class="badge {{ P.STATE_CLASS[c.state] }}">{{ P.CONTRACT_STATES[c.state] }}</span>
+            {% if c.days_left is defined and c.state == 'expiring' %}<div class="hint">còn {{ c.days_left }} ngày</div>{% endif %}</td>
+          <td class="num" style="white-space:nowrap">
+            {% if c.document_id %}<a class="btn small ghost" href="{{ url_for('main.document_download', doc_id=c.document_id) }}" target="_blank" title="Bản đã ký: {{ c.document_name }}">{{ icon('download') }}</a>{% endif %}
+            <a class="btn small ghost" href="{{ url_for('main.contract_print', contract_id=c.id) }}" target="_blank" title="In hợp đồng">{{ icon('list') }}</a>
+            {% if is_admin %}
+            <a class="btn small ghost" href="{{ url_for('main.contract_edit', contract_id=c.id) }}" title="Sửa">{{ icon('edit') }}</a>
+            {% if c.state in ('active', 'expiring') %}
+            <details style="display:inline-block;text-align:left"><summary class="btn small" title="Chấm dứt trước hạn">Chấm dứt</summary>
+              <form method="post" action="{{ url_for('main.contract_terminate', contract_id=c.id) }}" class="toolbar" style="margin:.5rem 0 0">
+                <input type="date" name="day" value="{{ today.isoformat() }}" required>
+                <button class="btn small danger">{{ icon('check') }}</button></form>
+            </details>
+            {% endif %}
+            <form class="inline" method="post" action="{{ url_for('main.contract_delete', contract_id=c.id) }}" onsubmit="return confirm('Xoá hợp đồng {{ c.number or '' }}? Chỉ nên xoá khi nhập nhầm.')">
+              <button class="btn small ghost" title="Xoá">{{ icon('trash') }}</button></form>
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}{{ empty('Chưa có hợp đồng', 'clipboard-check') }}{% endif %}
+</section>
+{% endif %}
+
+<section class="card section-gap" id="history">
+  <div class="card-head">
+    <h2>{{ icon('activity') }} Quá trình công tác</h2>
+    {% if is_admin and emp.status == 'active' and emp.id != g.user.employee_id %}<a class="btn small danger" href="{{ url_for('main.employee_offboard', emp_id=emp.id) }}">{{ icon('logout') }} Làm thủ tục nghỉ việc</a>{% endif %}
+  </div>
+  {% if emp.status != 'active' and is_admin %}
+  <details class="flash warning" style="margin-bottom:1rem" {{ 'open' if not history }}>
+    <summary style="cursor:pointer">Đã nghỉ việc{% if emp.termination_date %} từ {{ emp.termination_date|d }}{% endif %} · <b>Nhận lại làm</b></summary>
+    <form method="post" action="{{ url_for('main.employee_rehire', emp_id=emp.id) }}" class="toolbar" style="margin:.6rem 0 0">
+      <div class="field"><label>Ngày vào làm lại</label><input type="date" name="hire_date" required value="{{ today.isoformat() }}"></div>
+      <div class="field grow"><label>Ghi chú</label><input name="note" maxlength="300"></div>
+      <button class="btn small primary">{{ icon('check') }} Nhận lại</button>
+    </form>
+  </details>
+  {% endif %}
+  {% if history %}
+  <ul class="events">
+    {% for h in history %}
+    <li>
+      <time class="mono" style="min-width:5.6rem">{{ h.effective_date|d }}</time>
+      <div class="ev-body">
+        <b>{{ P.HISTORY_KINDS.get(h.kind, h.kind) }}</b>{% if h.from_value or h.to_value %}: {% if h.from_value %}<span class="faint">{{ h.from_value }}</span> → {% endif %}{{ h.to_value or '—' }}{% endif %}
+        <small>{% if h.decision_no %}QĐ {{ h.decision_no }} · {% endif %}{% if h.decided_by %}{{ h.decided_by }} · {% endif %}{{ h.note or '' }}{% if h.username %} <span class="faint">({{ h.username }})</span>{% endif %}</small>
+      </div>
+      {% if is_admin %}<form class="inline" method="post" action="{{ url_for('main.history_delete', emp_id=emp.id, history_id=h.id) }}" onsubmit="return confirm('Xoá dòng này khỏi quá trình công tác?')"><button class="btn small ghost" title="Xoá">{{ icon('trash') }}</button></form>{% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}{{ empty('Chưa có quyết định nào') }}{% endif %}
+  {% if is_admin and emp.status == 'active' %}
+  <details style="margin-top:.8rem"><summary class="btn link">Ghi quyết định (điều chuyển, chức danh, lương…)</summary>
+    <form method="post" action="{{ url_for('main.history_add', emp_id=emp.id) }}" class="form-grid" style="margin-top:.7rem" id="decision-form">
+      <div class="field"><label>Loại</label>
+        <select name="kind" id="decision-kind">{% for k in P.DECISION_KINDS %}<option value="{{ k }}">{{ P.HISTORY_KINDS[k] }}</option>{% endfor %}</select></div>
+      <div class="field"><label>Ngày hiệu lực</label><input type="date" name="effective_date" value="{{ today.isoformat() }}" required></div>
+      <div class="field" data-for="transfer"><label>Phòng ban mới</label>
+        <select name="department_id"><option value="">— Chưa phân —</option>
+          {% for d in departments %}<option value="{{ d.id }}" {{ 'selected' if d.id == emp.department_id }}>{{ d.name }}</option>{% endfor %}</select></div>
+      <div class="field" data-for="transfer title promotion"><label>Chức danh mới</label><input name="position" value="{{ emp.position or '' }}"></div>
+      <div class="field" data-for="salary"><label>Mức lương mới</label><input name="salary" inputmode="numeric" class="mono" placeholder="12.000.000"></div>
+      <div class="field"><label>Số quyết định</label><input name="decision_no" maxlength="60" class="mono"></div>
+      <div class="field"><label>Người quyết định</label><input name="decided_by" maxlength="100" placeholder="Giám đốc"></div>
+      <div class="field wide"><label>Ghi chú</label><input name="note" maxlength="500"></div>
+      <div><button class="btn small primary">{{ icon('check') }} Ghi</button>
+        <span class="hint">Điều chuyển / đổi chức danh có hiệu lực từ hôm nay trở về trước sẽ cập nhật luôn hồ sơ. Đổi lương chỉ ghi nhận, lương tính theo hợp đồng.</span></div>
+    </form>
+  </details>
+  {% endif %}
+</section>
+
+{% if sensitive %}
+<div class="grid section-gap">
+  <section class="card" id="dependents">
+    <h2>{{ icon('users') }} Người phụ thuộc</h2>
+    {% if dependents %}
+    <ul class="events">
+      {% for d in dependents %}
+      <li>
+        <div class="ev-body"><b>{{ d.full_name }}</b> <span class="faint">· {{ d.relation }}</span>
+          <small>{% if d.dob %}Sinh {{ d.dob|d }} · {% endif %}{% if d.tax_code %}MST {{ d.tax_code }} · {% endif %}Giảm trừ {{ d.deduct_from|d or '…' }} → {{ d.deduct_to|d or 'nay' }}{% if d.note %} · {{ d.note }}{% endif %}</small></div>
+        {% if edit_sensitive %}<form class="inline" method="post" action="{{ url_for('main.dependent_delete', emp_id=emp.id, dep_id=d.id) }}" onsubmit="return confirm('Xoá người phụ thuộc?')"><button class="btn small ghost" title="Xoá">{{ icon('trash') }}</button></form>{% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}{{ empty('Chưa đăng ký người phụ thuộc') }}{% endif %}
+    {% if edit_sensitive %}
+    <details style="margin-top:.8rem"><summary class="btn link">Thêm người phụ thuộc</summary>
+      <form method="post" action="{{ url_for('main.dependent_add', emp_id=emp.id) }}" class="form-grid" style="margin-top:.7rem">
+        <div class="field"><label>Họ tên *</label><input name="full_name" required maxlength="100"></div>
+        <div class="field"><label>Quan hệ *</label>
+          <select name="relation" required>{% for r in P.RELATIONS %}<option>{{ r }}</option>{% endfor %}</select></div>
+        <div class="field"><label>Ngày sinh</label><input type="date" name="dob"></div>
+        <div class="field"><label>Số CCCD / định danh</label><input name="id_number" class="mono" maxlength="20"></div>
+        <div class="field"><label>MST người phụ thuộc</label><input name="tax_code" class="mono" maxlength="20"></div>
+        <div class="field"><label>Giảm trừ từ</label><input type="date" name="deduct_from"></div>
+        <div class="field"><label>Giảm trừ đến</label><input type="date" name="deduct_to"></div>
+        <div class="field"><label>Ghi chú</label><input name="note" maxlength="200"></div>
+        <div><button class="btn small primary">{{ icon('plus') }} Thêm</button></div>
+      </form>
+    </details>
+    {% endif %}
+  </section>
+
+  <section class="card" id="documents">
+    <h2>{{ icon('inbox') }} Giấy tờ</h2>
+    {% if documents %}
+    <ul class="events">
+      {% for d in documents %}
+      <li>
+        <span class="ev-ico">{{ icon('list') }}</span>
+        <div class="ev-body"><a href="{{ url_for('main.document_download', doc_id=d.id) }}" target="_blank">{{ d.title }}</a>
+          <small>{{ P.DOC_KINDS.get(d.kind, d.kind) }} · {{ d.filename }} · {{ (d.size / 1024)|round(0, 'ceil')|int }} KB · {{ d.created_at[:10]|d }}</small></div>
+        {% if edit_sensitive %}<form class="inline" method="post" action="{{ url_for('main.document_delete', doc_id=d.id) }}" onsubmit="return confirm('Xoá {{ d.title }}?')"><button class="btn small ghost" title="Xoá">{{ icon('trash') }}</button></form>{% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}{{ empty('Chưa có giấy tờ') }}{% endif %}
+    {% if edit_sensitive %}
+    <form method="post" action="{{ url_for('main.document_upload', emp_id=emp.id) }}" enctype="multipart/form-data" class="toolbar" style="margin:.9rem 0 0">
+      <div class="field"><label>Loại</label><select name="kind">{% for k, v in P.DOC_KINDS.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select></div>
+      <div class="field grow"><label>Tên giấy tờ</label><input name="title" maxlength="150" placeholder="Để trống: theo loại"></div>
+      <div class="field grow"><label>File (PDF, ảnh, Word, Excel · ≤ 8 MB)</label><input type="file" name="file" required></div>
+      <button class="btn small primary">{{ icon('plus') }} Tải lên</button>
+    </form>
+    {% endif %}
+  </section>
+</div>
+{% endif %}

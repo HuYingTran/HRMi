@@ -100,7 +100,7 @@ class AttendanceTest(Base):
         row = services.monthly_report(self.conn, 2026, 9, self.cfg)[0]
         self.assertEqual((row["business"], row["leave_days"]), (2, 0))
         self.assertEqual(row["absent"], 20)
-        self.assertEqual(services.leave_balance(self.conn, self.emp, 2026)["used"], 0)  # không trừ phép
+        self.assertEqual(services.leave_balance(self.conn, self.emp, 2026, self.cfg)["used"], 0)  # không trừ phép
 
     def test_weekend_work_is_ot(self):
         sat = datetime(2026, 10, 3, 8, 30)
@@ -148,7 +148,7 @@ class LeaveTest(Base):
         with self.assertRaises(services.ServiceError):  # vượt định mức 2 ngày (đã giữ 0.5)
             services.create_leave(self.conn, self.emp["id"], "annual", "2026-10-19", "2026-10-20",
                                   False, None, self.cfg)
-        bal = services.leave_balance(self.conn, self.emp, 2026)
+        bal = services.leave_balance(self.conn, self.emp, 2026, self.cfg)
         self.assertEqual((bal["pending"], bal["available"]), (0.5, 1.5))
 
     def test_approve_marks_day_as_leave(self):

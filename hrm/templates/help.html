@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon, empty %}
+{% block title %}Hướng dẫn{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><h1>Hướng dẫn sử dụng</h1>
+    <div class="sub">Các hướng dẫn dành cho vai trò của bạn. Có thể hỏi nhanh trợ lý ở góc phải dưới (phím <code>?</code>).</div></div>
+  <div class="search" style="min-width:min(320px,100%)">{{ icon('search') }}
+    <input id="help-q" value="{{ q }}" placeholder="Tìm hướng dẫn, ví dụ: nghỉ nửa ngày" autocomplete="off"></div>
+</div>
+
+<div class="help-groups" id="help-groups">
+  {% for group, topics in groups.items() %}
+  <section class="card" data-group>
+    <h2>{{ group }}</h2>
+    <ul class="help-list">
+      {% for t in topics %}
+      <li data-search="{{ strip_accents(t.title ~ ' ' ~ t.keywords|join(' ') ~ ' ' ~ t.ask|join(' ')) }}">
+        <a href="{{ url_for('main.help_topic', slug=t.slug) }}"><span>{{ t.title }}{% if t.ask %}<small>{{ t.ask[0] }}</small>{% endif %}</span>{{ icon('arrow-right') }}</a>
+      </li>
+      {% endfor %}
+    </ul>
+  </section>
+  {% endfor %}
+</div>
+<div id="help-empty" hidden>{{ empty('Không có hướng dẫn khớp. Thử hỏi trợ lý ở góc phải dưới.', 'help') }}</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  // lọc ngay khi gõ, không phân biệt dấu (giống ô tìm nhân viên)
+  const input = document.getElementById('help-q');
+  const fold = s => s.toLowerCase().replace(/đ/g, 'd').normalize('NFD').replace(/[̀-ͯ]/g, '');
+  function filter() {
+    const words = fold(input.value).split(/\s+/).filter(Boolean);
+    let shown = 0;
+    document.querySelectorAll('[data-group]').forEach(sec => {
+      let n = 0;
+      sec.querySelectorAll('li[data-search]').forEach(li => {
+        const ok = words.every(w => li.dataset.search.includes(w));
+        li.hidden = !ok;
+        n += ok;
+      });
+      sec.hidden = !n;
+      shown += n;
+    });
+    document.getElementById('help-empty').hidden = shown > 0;
+  }
+  input.addEventListener('input', filter);
+  filter();
+})();
+</script>
+{% endblock %}

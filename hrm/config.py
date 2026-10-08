@@ -17,7 +17,8 @@ def _env_bool(name, default):
 class Config:
     DATABASE = _env("DATABASE", str(INSTANCE_DIR / "hrm.db"))
     PHOTO_DIR = _env("PHOTO_DIR", str(INSTANCE_DIR / "photos"))
-    MAX_CONTENT_LENGTH = 8 * 1024 * 1024  # giới hạn upload ảnh 8 MB
+    DOCUMENT_DIR = _env("DOCUMENT_DIR", str(INSTANCE_DIR / "documents"))
+    MAX_CONTENT_LENGTH = 8 * 1024 * 1024  # giới hạn upload ảnh / giấy tờ 8 MB
 
     # Ca làm việc
     WORK_START = _env("WORK_START", "08:00")

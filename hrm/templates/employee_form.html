@@ -9,7 +9,7 @@
     <button class="btn primary" form="emp-form">{{ icon('check') }} {{ 'Tạo' if is_new else 'Lưu' }}</button>
   </div>
 </div>
-<form method="post" class="card" style="max-width:980px" enctype="multipart/form-data" id="emp-form">
+<form method="post" class="card accent" style="max-width:980px" enctype="multipart/form-data" id="emp-form">
   <div class="photo-field">
     <label class="photo-pick" title="Chọn ảnh">
       {% if emp.photo %}<img id="photo-preview" class="avatar xl" src="{{ url_for('main.photo', name=emp.photo) }}" alt="">
@@ -51,14 +51,52 @@
       </div>
       <div class="field"><label>Chức vụ</label><input name="position" value="{{ emp.position or '' }}"></div>
       <div class="field"><label>Ngày vào làm</label><input type="date" name="hire_date" value="{{ emp.hire_date or '' }}"></div>
+      <div class="field"><label>Ca làm việc</label>
+        <select name="shift_id">
+          <option value="">— Theo phòng ban —</option>
+          {% for s in shifts %}<option value="{{ s.id }}" {{ 'selected' if emp.shift_id == s.id }}>{{ s.name }} ({{ s.work_start }}–{{ s.work_end }})</option>{% endfor %}
+        </select>
+        {% if not shifts %}<a class="hint" href="{{ url_for('main.work_time') }}">+ Tạo ca làm việc</a>{% endif %}
+      </div>
       <div class="field"><label>Phép năm (ngày)</label><input type="number" step="0.5" min="0" name="annual_leave_days" value="{{ emp.annual_leave_days|num }}" class="mono"></div>
+      {% if not is_new %}
       <div class="field"><label>Trạng thái</label>
-        <select name="status">
-          <option value="active" {{ 'selected' if emp.status == 'active' }}>Đang làm</option>
-          <option value="inactive" {{ 'selected' if emp.status == 'inactive' }}>Đã nghỉ</option>
-        </select></div>
+        <div style="padding:.45rem 0"><span class="badge {{ emp.status }}">{{ 'Đang làm' if emp.status == 'active' else 'Đã nghỉ' }}</span>
+          {% if is_admin %}<a class="hint" href="{{ url_for('main.employee_offboard', emp_id=emp.id) if emp.status == 'active' else url_for('main.employee_detail', emp_id=emp.id) ~ '#history' }}">{{ 'Làm thủ tục nghỉ việc' if emp.status == 'active' else 'Nhận lại làm' }} →</a>{% endif %}</div></div>
+      {% endif %}
     </div>
   </div>
+
+  <div class="form-section">
+    <h2>{{ icon('user-check') }} Thông tin thêm</h2>
+    <div class="form-grid">
+      <div class="field"><label>Quê quán</label><input name="hometown" value="{{ emp.hometown or '' }}"></div>
+      <div class="field"><label>Tình trạng hôn nhân</label>
+        <select name="marital_status"><option value=""></option>
+          {% for m in P.MARITAL %}<option {{ 'selected' if emp.marital_status == m }}>{{ m }}</option>{% endfor %}</select></div>
+      <div class="field"><label>Trình độ</label>
+        <input name="education" value="{{ emp.education or '' }}" list="education-list" placeholder="Đại học, Cao đẳng…">
+        <datalist id="education-list">{% for e in P.EDUCATION %}<option value="{{ e }}">{% endfor %}</datalist></div>
+      <div class="field"><label>Liên hệ khẩn cấp</label><input name="emergency_name" value="{{ emp.emergency_name or '' }}" placeholder="Họ tên"></div>
+      <div class="field"><label>Quan hệ</label><input name="emergency_relation" value="{{ emp.emergency_relation or '' }}" placeholder="Vợ, chồng, bố, mẹ…"></div>
+      <div class="field"><label>SĐT khẩn cấp</label><input name="emergency_phone" value="{{ emp.emergency_phone or '' }}" class="mono"></div>
+    </div>
+  </div>
+
+  {% if sensitive %}
+  <div class="form-section">
+    <h2>{{ icon('lock') }} Giấy tờ & tài khoản <span class="hint" style="font-weight:400">· thông tin nhạy cảm</span></h2>
+    <div class="form-grid">
+      <div class="field"><label>Số CCCD</label><input name="id_number" value="{{ emp.id_number or '' }}" class="mono" inputmode="numeric" maxlength="20"></div>
+      <div class="field"><label>Ngày cấp</label><input type="date" name="id_issue_date" value="{{ emp.id_issue_date or '' }}"></div>
+      <div class="field"><label>Nơi cấp</label><input name="id_issue_place" value="{{ emp.id_issue_place or '' }}" placeholder="Cục CS QLHC về TTXH"></div>
+      <div class="field"><label>Mã số thuế cá nhân</label><input name="tax_code" value="{{ emp.tax_code or '' }}" class="mono" maxlength="20"></div>
+      <div class="field"><label>Số sổ BHXH</label><input name="social_insurance_no" value="{{ emp.social_insurance_no or '' }}" class="mono" maxlength="20"></div>
+      <div class="field"><label>Số tài khoản</label><input name="bank_account" value="{{ emp.bank_account or '' }}" class="mono" maxlength="30"></div>
+      <div class="field"><label>Ngân hàng</label><input name="bank_name" value="{{ emp.bank_name or '' }}" placeholder="Vietcombank – CN Hà Nội"></div>
+    </div>
+  </div>
+  {% endif %}
 
   <div class="form-section">
     <h2>{{ icon('card') }} Thẻ RFID</h2>

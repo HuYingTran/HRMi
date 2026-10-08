@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon, person, dept, empty %}
+{% block title %}Hợp đồng{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><h1>Hợp đồng lao động</h1>
+    <div class="sub">Trạng thái tính theo ngày hôm nay; "sắp hết hạn" là còn dưới {{ P.EXPIRING_DAYS }} ngày.</div></div>
+</div>
+
+{% if alerts.expiring or alerts.expired or alerts.no_contract %}
+<div class="stats compact">
+  <a class="stat warn" href="{{ url_for('main.contracts', state='expiring') }}" style="color:inherit"><div class="top">Sắp hết hạn, chưa ký tiếp</div><div class="value">{{ alerts.expiring|length }}</div></a>
+  <a class="stat bad" href="{{ url_for('main.contracts', state='expired') }}" style="color:inherit"><div class="top">Hết hạn, chưa ký tiếp</div><div class="value">{{ alerts.expired|length }}</div></a>
+  <div class="stat" title="{{ alerts.no_contract|map(attribute='full_name')|join(', ') }}"><div class="top">Chưa có hợp đồng</div><div class="value">{{ alerts.no_contract|length }}</div></div>
+</div>
+{% endif %}
+
+<div class="toolbar">
+  <div class="seg">
+    <a class="{{ 'on' if not state }}" href="{{ url_for('main.contracts') }}">Tất cả</a>
+    {% for key, label in P.CONTRACT_STATES.items() %}
+    <a class="{{ 'on' if state == key }}" href="{{ url_for('main.contracts', state=key) }}">{{ label }}{% if counts[key] %} <span class="faint">{{ counts[key] }}</span>{% endif %}</a>
+    {% endfor %}
+  </div>
+  {% if not state %}<a class="hint" href="{{ url_for('main.contracts', all=1) if not request.args.all else url_for('main.contracts') }}">{{ 'Ẩn' if request.args.all else 'Hiện cả' }} người đã nghỉ việc</a>{% endif %}
+</div>
+
+<div class="card flush table-wrap">
+  <table>
+    <thead><tr><th>Nhân viên</th><th>Số HĐ</th><th>Loại</th><th>Thời hạn</th><th class="num">Lương</th><th>Trạng thái</th><th></th></tr></thead>
+    <tbody>
+    {% for c in rows %}
+      <tr>
+        <td>{{ person({'id': c.employee_id, 'full_name': c.full_name, 'code': c.code, 'photo': c.photo}, dept(c.department, c.department_id) if c.department else c.code) }}</td>
+        <td class="mono">{{ c.number or '—' }}</td>
+        <td>{{ P.CONTRACT_TYPES[c.type] }}</td>
+        <td class="mono" style="font-size:.85rem">{{ c.start_date|d }} → {{ (c.terminated_on if c.state == 'terminated' else c.end_date)|d or 'không thời hạn' }}</td>
+        <td class="num mono">{{ c.salary|money }}</td>
+        <td><span class="badge {{ P.STATE_CLASS[c.state] }}">{{ P.CONTRACT_STATES[c.state] }}</span>
+          {% if c.state == 'expiring' %}<div class="hint">còn {{ c.days_left }} ngày</div>{% endif %}
+          {% if c.employee_status != 'active' %}<div class="hint">NV đã nghỉ</div>{% endif %}</td>
+        <td class="num" style="white-space:nowrap">
+          {% if c.state in ('expiring', 'expired') and c.employee_status == 'active' %}<a class="btn small primary" href="{{ url_for('main.contract_new', emp_id=c.employee_id) }}">{{ icon('plus') }} Ký tiếp</a>{% endif %}
+          <a class="btn small ghost" href="{{ url_for('main.contract_print', contract_id=c.id) }}" target="_blank" title="In">{{ icon('list') }}</a>
+          <a class="btn small ghost" href="{{ url_for('main.contract_edit', contract_id=c.id) }}" title="Sửa">{{ icon('edit') }}</a>
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="7">{{ empty('Không có hợp đồng', 'clipboard-check') }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+<p class="hint">Tạo hợp đồng mới từ trang hồ sơ nhân viên. Thông tin bên sử dụng lao động khi in lấy từ <a href="{{ url_for('main.company_settings') }}">Cài đặt › Công ty</a>.</p>
+{% endblock %}

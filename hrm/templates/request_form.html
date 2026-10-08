@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon %}
+{% block title %}Tạo đơn trong ngày{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Đơn trong ngày</h1></div>
+<form method="post" class="card" style="max-width:760px">
+  <div class="form-grid">
+    <div class="field wide"><label>Nhân viên</label>
+      <select name="employee_id" required>
+        <option value=""></option>
+        {% for e in employees %}<option value="{{ e.id }}" {{ 'selected' if form.employee_id|string == e.id|string }}>{{ e.code }} · {{ e.full_name }}</option>{% endfor %}
+      </select></div>
+    <div class="field"><label>Loại đơn</label>
+      <select name="req_type" id="req-type">
+        {% for k, v in REQ_TYPES.items() %}<option value="{{ k }}" {{ 'selected' if form.req_type == k }}>{{ v }}</option>{% endfor %}
+      </select></div>
+    <div class="field"><label>Ngày</label><input type="date" name="day" value="{{ form.day }}" required></div>
+    <div class="field" id="f-from"><label></label><input type="time" name="time_from" value="{{ form.time_from or '' }}"></div>
+    <div class="field" id="f-to"><label></label><input type="time" name="time_to" value="{{ form.time_to or '' }}"></div>
+    <div class="field wide"><label>Lý do</label><textarea name="reason" required placeholder="VD: đưa con đi khám, kẹt xe…">{{ form.reason or '' }}</textarea></div>
+  </div>
+  <p class="hint" id="req-hint"></p>
+  <div class="actions">
+    <button class="btn primary">{{ icon('check') }} Gửi</button>
+    <a class="btn danger" href="{{ url_for('main.requests_list') }}">{{ icon('x') }} Huỷ</a>
+  </div>
+</form>
+{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  const labels = {{ TIME_LABELS|tojson }}, hints = {{ HINTS|tojson }};
+  const sel = document.getElementById('req-type');
+  function apply() {
+    const [a, b] = labels[sel.value];
+    for (const [id, text] of [['f-from', a], ['f-to', b]]) {
+      const box = document.getElementById(id);
+      box.hidden = !text;
+      box.querySelector('label').textContent = text || '';
+      const input = box.querySelector('input');
+      input.required = ['out', 'overtime'].includes(sel.value);
+      if (!text) input.value = '';
+    }
+    document.getElementById('req-hint').textContent = hints[sel.value];
+  }
+  sel.addEventListener('change', apply);
+  apply();
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon %}
+{% block title %}Quy định nghỉ phép{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><h1>Quy định nghỉ phép</h1>
+    <div class="sub">Cách tính phép năm và các loại nghỉ theo Bộ luật Lao động 2019.</div></div>
+</div>
+
+<form method="post" class="grid-2-1">
+  <section class="card">
+    <h2>{{ icon('umbrella') }} Phép năm</h2>
+    <div class="form-grid">
+      <div class="field wide"><label>{{ RULES.leave_accrual[0] }}</label>
+        <select name="leave_accrual">{% for k, v in LEAVE_ACCRUAL.items() %}<option value="{{ k }}" {{ 'selected' if rules.leave_accrual == k }}>{{ v }}</option>{% endfor %}</select>
+        <span class="hint">Cộng dồn: mỗi tháng làm việc được thêm 1/12 định mức, chỉ dùng được phần đã cộng.</span></div>
+      <div class="field wide"><label><input type="checkbox" name="leave_prorate" value="1" {{ 'checked' if rules.leave_prorate }}>{{ RULES.leave_prorate[0] }}</label>
+        <span class="hint">Định mức × số tháng làm việc ÷ 12, làm tròn (≥ 0,5 lên 1). Vào làm sau ngày 15 thì tính từ tháng sau.</span></div>
+      <div class="field wide"><label><input type="checkbox" name="leave_seniority" value="1" {{ 'checked' if rules.leave_seniority }}>{{ RULES.leave_seniority[0] }}</label>
+        <span class="hint">Tính theo số năm làm việc tròn tới ngày 1/1 của năm, dựa vào ngày vào làm trong hồ sơ.</span></div>
+      <div class="field"><label>{{ RULES.leave_carry_max[0] }}</label><input type="number" name="leave_carry_max" step="0.5" min="0" max="60" value="{{ rules.leave_carry_max|num }}" required></div>
+      <div class="field"><label>{{ RULES.leave_carry_expiry[0] }}</label><input name="leave_carry_expiry" value="{{ rules.leave_carry_expiry }}" pattern="\d{2}-\d{2}" placeholder="03-31" required></div>
+    </div>
+    <p class="hint" style="margin-bottom:0">Phép tồn chỉ được chuyển khi năm trước nhân viên đã có dữ liệu chấm công trên hệ thống. Ngày phép trong năm dùng phần chuyển sang trước; phần chưa dùng hết hạn sau ngày trên.
+      Admin cộng / trừ phép thủ công ở hồ sơ từng nhân viên (thưởng phép, chuyển từ hệ thống cũ...).</p>
+  </section>
+
+  <section class="card" style="align-self:start">
+    <h2>{{ icon('calendar') }} Các loại nghỉ</h2>
+    <table>
+      <thead><tr><th>Loại</th><th class="c">Hưởng lương</th><th class="num">Tối đa / đơn</th></tr></thead>
+      <tbody>
+        <tr><td>Phép năm</td><td class="c">✓</td><td class="num hint">theo số dư</td></tr>
+      {% for t in LEAVE_POLICY %}
+        <tr>
+          <td>{{ LEAVE_TYPES[t] }}</td>
+          <td class="c"><input type="checkbox" name="leave_paid_{{ t }}" value="1" {{ 'checked' if rules['leave_paid_' ~ t] }} aria-label="{{ LEAVE_TYPES[t] }} hưởng lương"></td>
+          <td class="num"><input type="number" name="leave_max_{{ t }}" step="0.5" min="0" max="365" value="{{ rules['leave_max_' ~ t]|num }}" style="width:5.5rem" aria-label="Tối đa ngày {{ LEAVE_TYPES[t] }}"></td>
+        </tr>
+      {% endfor %}
+        <tr><td>Không lương</td><td class="c faint">—</td><td class="num hint">không giới hạn</td></tr>
+      </tbody>
+    </table>
+    <p class="hint">Hưởng lương: ngày nghỉ được tính vào công tính lương. Nghỉ ốm, thai sản mặc định do BHXH chi trả nên không tính. Tối đa 0 = không giới hạn. Số ngày nghỉ tính theo ngày làm việc của ca nhân viên.</p>
+    <div class="actions"><button class="btn primary">{{ icon('check') }} Lưu quy định</button></div>
+  </section>
+</form>
+{% endblock %}
