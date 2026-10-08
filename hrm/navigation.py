@@ -81,6 +81,9 @@ MODULES = [
         Page("main.company_settings", "Công ty", _admin),
         Page("main.device", "Thiết bị", _admin),
     ]),
+    Module("help", "Hướng dẫn", "help", [
+        Page("main.help_index", "Hướng dẫn", lambda: True, match=("main.help",)),
+    ]),
 ]
 
 

@@ -137,12 +137,13 @@ code { background: var(--surface-3); padding: .08rem .4rem; border-radius: 6px; 
 .nav .count { margin-left: auto; font-family: var(--mono); font-size: .72rem; padding: 0 .45rem; border-radius: 999px; background: var(--warn-soft); color: var(--warn); }
 .sidebar-foot { margin-top: auto; display: flex; flex-direction: column; gap: .6rem; }
 .clock-row { display: flex; align-items: center; gap: .5rem; }
-.clock-row .clock { flex: 1; min-width: 0; text-align: center; white-space: nowrap; font-size: .76rem; padding: .45rem .4rem; border-radius: 10px; }
+.clock-row .clock { flex: 1; min-width: 0; text-align: center; white-space: nowrap; font-size: .74rem; letter-spacing: -.03em; padding: .45rem .2rem; border-radius: 10px; }
 .device-mini { display: flex; flex-direction: column; gap: .35rem; padding: .75rem; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); font-size: .8rem; }
 .device-mini div { display: flex; align-items: center; gap: .5rem; color: var(--muted); }
 .user-row { display: flex; align-items: center; gap: .6rem; padding: .35rem .25rem; }
 .user-row .who { flex: 1; min-width: 0; }
-.user-row .who a { color: var(--text); font-weight: 600; }
+.user-row .who a { color: var(--text); font-weight: 600; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.user-row .icon-btn { flex: none; }
 .user-row .who small { display: block; color: var(--faint); font-size: .72rem; }
 
 .content { min-width: 0; display: flex; flex-direction: column; }
@@ -703,7 +704,6 @@ a.stat:hover { border-color: var(--accent); box-shadow: var(--glow); transform: 
 /* ============================================================ trợ lý HRMi */
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 main { padding-bottom: 5.5rem; }  /* chừa chỗ cho nút trợ lý */
-.icon-btn.active { color: var(--accent); border-color: var(--border-accent); background: var(--accent-soft); }
 .asst { position: fixed; right: 20px; bottom: 20px; z-index: 50; }
 .asst-fab {
   width: 54px; height: 54px; border-radius: 50%; border: 0; cursor: pointer;

@@ -27,7 +27,6 @@
     <div class="sidebar-foot">
       <div class="clock-row">
         <span class="clock" id="clock"></span>
-        <a class="icon-btn {{ 'active' if ep.startswith('main.help') }}" href="{{ url_for('main.help_index') }}" title="Hướng dẫn sử dụng">{{ icon('help') }}</a>
         {% if is_admin %}<a class="icon-btn" href="{{ url_for('main.kiosk') }}" target="_blank" title="Mở màn hình kiosk">{{ icon('monitor') }}</a>{% endif %}
         <button class="icon-btn" id="theme" title="Đổi giao diện sáng/tối">
           <svg class="i sun"><use href="#i-sun"/></svg><svg class="i moon"><use href="#i-moon"/></svg>

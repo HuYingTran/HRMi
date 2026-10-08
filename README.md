@@ -1,10 +1,111 @@
-# HRMi: Mini HRM trên Raspberry Pi
+<div align="center">
 
-![tests](../../actions/workflows/tests.yml/badge.svg)
+<img src="docs/logo.svg" width="88" alt="HRMi logo">
 
-Hệ thống quản lý nhân sự nhỏ chạy trực tiếp trên Raspberry Pi, chấm công bằng **thẻ RFID (PN532)** và **vân tay (AS608)**. Web quản trị, cổng tự phục vụ cho nhân viên và màn hình kiosk đều chạy trên cùng một máy, không cần Internet.
+# HRMi
 
-Gồm: chấm công theo ca, ngày lễ và OT theo luật Việt Nam, nghỉ phép và đơn từ có duyệt, chốt bảng công hằng tháng, hồ sơ nhân sự, hợp đồng lao động, quá trình công tác, thủ tục nghỉ việc, thông báo email và **trợ lý hướng dẫn sử dụng** (chat ở góc màn hình, chạy offline). Lộ trình phát triển tiếp theo xem [ROADMAP.md](ROADMAP.md).
+**Mini HRM chấm công bằng thẻ RFID và vân tay, chạy trọn trên một chiếc Raspberry Pi**
+
+Chấm công · Ca làm việc · Ngày lễ & OT theo luật Việt Nam · Nghỉ phép & đơn từ · Chốt bảng công · Hồ sơ & hợp đồng · Trợ lý hướng dẫn
+
+[![tests](https://github.com/HuYingTran/HRMi/actions/workflows/tests.yml/badge.svg)](https://github.com/HuYingTran/HRMi/actions/workflows/tests.yml)
+![Python](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white)
+![Flask](https://img.shields.io/badge/Flask-3-0891b2?logo=flask&logoColor=white)
+![SQLite](https://img.shields.io/badge/SQLite-offline-003B57?logo=sqlite&logoColor=white)
+![Raspberry Pi](https://img.shields.io/badge/Raspberry%20Pi-4-C51A4A?logo=raspberrypi&logoColor=white)
+[![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-4f46e5)](LICENSE)
+
+[Ảnh demo](#ảnh-demo) · [Chạy nhanh](#chạy-nhanh) · [Tính năng](#tính-năng) · [Đấu nối phần cứng](#đấu-nối-phần-cứng) · [Lộ trình](ROADMAP.md)
+
+<img src="docs/screenshots/dashboard.png" alt="Trang tổng quan HRMi" width="100%">
+
+</div>
+
+## Điểm nổi bật
+
+<table>
+<tr>
+<td width="33%" valign="top">
+
+**🪪 Chấm công RFID + vân tay**<br>
+Đầu đọc PN532 và cảm biến AS608 nối thẳng vào Pi. Kiosk hiện kết quả từng lượt quẹt; tự tính đi muộn, về sớm, giờ công theo ca.
+
+</td>
+<td width="33%" valign="top">
+
+**⚖️ Đúng luật lao động Việt Nam**<br>
+Ngày lễ âm lịch & nghỉ bù tự nạp, OT 150/200/300% + giờ đêm, phép theo tỉ lệ & thâm niên, kiểm tra hợp đồng theo BLLĐ 2019.
+
+</td>
+<td width="33%" valign="top">
+
+**📋 Quy trình chốt công**<br>
+Nhân viên xác nhận & giải trình, cấp trên duyệt, quản trị chốt và xuất CSV tính lương. Tháng đã chốt được khoá.
+
+</td>
+</tr>
+<tr>
+<td valign="top">
+
+**🌳 Phân quyền theo sơ đồ tổ chức**<br>
+Trưởng phòng quản lý cả nhánh phòng ban; ma trận quyền bật/tắt được; thông tin nhạy cảm có quyền riêng.
+
+</td>
+<td valign="top">
+
+**💬 Trợ lý hướng dẫn offline**<br>
+Hỏi bằng tiếng Việt có dấu hay không dấu, nhận các bước làm và nút mở đúng trang, lọc theo vai trò người hỏi.
+
+</td>
+<td valign="top">
+
+**📡 Không cần Internet**<br>
+Flask + SQLite chạy trên một máy, không CDN, icon SVG nội tuyến. Email thông báo qua hàng đợi, mất mạng tự gửi lại.
+
+</td>
+</tr>
+</table>
+
+## Ảnh demo
+
+> Ảnh chụp từ dữ liệu mô phỏng của `seed.py` (tên người, số liệu đều là giả). Tạo lại bằng `env/bin/python tools/screenshots.py`.
+
+<table>
+<tr>
+<td width="50%"><img src="docs/screenshots/assistant.png" alt="Trợ lý hướng dẫn"><br><b>Trợ lý hướng dẫn</b>: hỏi "xin nghỉ nửa ngày", nhận các bước và nút mở trang.</td>
+<td width="50%"><img src="docs/screenshots/dashboard-dark.png" alt="Giao diện tối"><br><b>Giao diện tối</b>: chuyển sáng / tối bằng một nút, trình duyệt ghi nhớ.</td>
+</tr>
+<tr>
+<td><img src="docs/screenshots/timesheets.png" alt="Chốt công"><br><b>Chốt công</b>: theo dõi từng bước của bảng công tháng, chốt hàng loạt.</td>
+<td><img src="docs/screenshots/report.png" alt="Báo cáo tháng"><br><b>Báo cáo tháng</b>: ngày công, đi muộn, nghỉ, OT theo loại, xuất CSV.</td>
+</tr>
+<tr>
+<td><img src="docs/screenshots/employee.png" alt="Hồ sơ nhân viên"><br><b>Hồ sơ nhân viên</b>: sơ đồ tổ chức quanh nhân viên, thẻ / vân tay, phép năm.</td>
+<td><img src="docs/screenshots/contracts.png" alt="Hợp đồng lao động"><br><b>Hợp đồng lao động</b>: trạng thái theo ngày, nhắc hết hạn, ký tiếp.</td>
+</tr>
+<tr>
+<td><img src="docs/screenshots/kiosk.png" alt="Kiosk"><br><b>Kiosk</b>: màn hình đặt cạnh máy chấm công, chào theo kết quả quét.</td>
+<td><img src="docs/screenshots/departments.png" alt="Phòng ban"><br><b>Phòng ban</b>: sơ đồ cây cũng là cây phân quyền.</td>
+</tr>
+</table>
+
+<details>
+<summary><b>Xem thêm ảnh</b>: danh sách nhân viên, ngày lễ & OT, trang hướng dẫn, bản in hợp đồng</summary>
+<br>
+
+| | |
+|---|---|
+| <img src="docs/screenshots/employees.png" alt="Danh sách nhân viên"><br>Danh sách nhân viên, tìm kiếm không dấu | <img src="docs/screenshots/work-rules.png" alt="Ngày lễ và OT"><br>Ngày lễ theo luật (có âm lịch) và hệ số OT |
+| <img src="docs/screenshots/help.png" alt="Hướng dẫn sử dụng"><br>Trang hướng dẫn theo vai trò | <img src="docs/screenshots/contract-print.png" alt="Bản in hợp đồng"><br>In hợp đồng A4, lương bằng chữ |
+
+</details>
+
+## Mục lục
+
+- [Chạy nhanh](#chạy-nhanh) · [Phát triển](#phát-triển-tự-nạp-lại-khi-sửa-code) · [Tính năng theo vai trò](#tính-năng-theo-vai-trò)
+- [Tính năng](#tính-năng): [nhân viên](#nhân-viên--tổ-chức) · [ca làm việc](#giờ-làm-việc--ca-cài-đặt--giờ-làm--ca) · [chấm công](#chấm-công) · [ngày lễ & OT](#ngày-lễ--làm-thêm-giờ-cài-đặt--ngày-lễ--ot-admin) · [đơn trong ngày](#đơn-trong-ngày) · [nghỉ phép](#nghỉ-phép--công-tác) · [email](#thông-báo-email-cài-đặt--email) · [chốt công](#xác-nhận--chốt-công-tiền-đề-tính-lương) · [hợp đồng](#hợp-đồng--quá-trình-công-tác-admin) · [trợ lý](#trợ-lý-hrmi--hướng-dẫn-sử-dụng)
+- [Giao diện](#giao-diện) · [Kiến trúc](#kiến-trúc) · [Cấu trúc thư mục](#cấu-trúc-thư-mục) · [Dữ liệu](#dữ-liệu)
+- [Đấu nối phần cứng](#đấu-nối-phần-cứng) · [Chạy thật bằng systemd](#chạy-thật-bằng-systemd) · [Quy trình sử dụng](#quy-trình-sử-dụng) · [Dữ liệu mô phỏng](#dữ-liệu-mô-phỏng) · [Cấu hình](#cấu-hình) · [Kiểm thử](#kiểm-thử) · [Giới hạn hiện tại](#giới-hạn-hiện-tại)
 
 ## Chạy nhanh
 
@@ -177,7 +278,7 @@ Chưa gửi ─(admin gửi)→ Chờ NV xác nhận ─(NV giải trình, gửi
 - Chạy **offline hoàn toàn**, không cần Internet hay mô hình AI: tra cứu kho hướng dẫn `hrm/help/*.md` bằng tìm kiếm không dấu (BM25, khớp cả cụm hai âm tiết như "chấm công", "nghỉ phép").
 - **Theo vai trò và quyền:** chỉ đưa link tới trang người hỏi vào được; hỏi việc của vai trò khác (nhân viên hỏi "thêm nhân viên") thì trợ lý nói rõ việc đó do ai làm.
 - Hội thoại giữ trong tab trình duyệt (sang trang khác vẫn còn, đóng tab thì mất), không lưu trên server.
-- Trang **Hướng dẫn** (`/help`, biểu tượng ? ở chân thanh bên): toàn bộ hướng dẫn theo nhóm, có ô lọc không dấu.
+- Trang **Hướng dẫn** (`/help`, mục **Hướng dẫn** cuối thanh bên): toàn bộ hướng dẫn theo nhóm, có ô lọc không dấu.
 - Thêm / sửa hướng dẫn: viết file `.md` trong `hrm/help/` (khai báo `title`, `group`, `roles`, `pages`, `keywords`, `ask` ở đầu file; đoạn trước `## ` đầu tiên là câu trả lời ngắn trong khung chat; `[[main.endpoint]]` chèn liên kết trang). Không cần khởi động lại; test kiểm tra mọi trang được nhắc tới đều tồn tại.
 - Kế hoạch tầng AI (Claude API) xem [AI_ASSISTANT.md](AI_ASSISTANT.md).
 
@@ -199,11 +300,12 @@ Chưa gửi ─(admin gửi)→ Chờ NV xác nhận ─(NV giải trình, gửi
   | Nhân sự | Nhân viên · Hợp đồng · Phòng ban · Phân quyền | Admin; trưởng phòng thấy Nhân viên |
   | Chấm công | Theo ngày · Báo cáo tháng · Chốt công (Duyệt bảng công) | Admin, trưởng phòng |
   | Cài đặt | Ngày lễ & OT · Giờ làm & ca · Nghỉ phép · Email · Công ty · Thiết bị | Admin |
+  | Hướng dẫn | — | Mọi người (nội dung theo vai trò) |
 
   Nút mở **Kiosk** nằm ở chân thanh bên, cạnh nút sáng/tối. Thêm trang mới: khai báo vào `MODULES` trong `hrm/navigation.py`.
 - **Giao diện sáng mặc định.** Nút ☾/☀ ở chân thanh bên trái chuyển sáng/tối, lựa chọn được trình duyệt ghi nhớ. Bấm tên tài khoản bên cạnh để mở hồ sơ của mình.
 - **Màu trạng thái** dùng thống nhất ở mọi nơi: xanh lá là đúng giờ, vàng là đi muộn, xanh dương là công tác, tím là nghỉ phép, xanh bạc hà là OT, đỏ là vắng. Bộ màu đã được kiểm tra bằng công cụ đo khoảng cách màu, có mô phỏng người mù màu. Màu luôn đi kèm nhãn chữ.
-- **Trợ lý & Hướng dẫn:** nút chat tròn gradient cyan ở góc phải dưới, biểu tượng ? ở chân thanh bên mở trang Hướng dẫn.
+- **Trợ lý & Hướng dẫn:** nút chat tròn gradient cyan ở góc phải dưới; mục **Hướng dẫn** cuối thanh bên mở trang hướng dẫn.
 - **Viền cyan theo màu nhấn:** thẻ, ô số liệu, bộ lọc dạng nút và đường kẻ bảng dùng viền cyan nhạt (biến `--border-accent` trong `style.css`, mỗi theme sáng/tối một giá trị); ô số liệu bấm được sáng viền khi rê chuột. Thẻ chính (đầu hồ sơ, các form hồ sơ / hợp đồng / nghỉ việc / công ty, nhắc việc trên Tổng quan) có thêm vạch gradient cyan → tím ở mép trên (class `card accent`); biểu mẫu mở ra trong thẻ được đóng khung cyan nét đứt.
 - **Hoạt động offline:** không dùng CDN, icon là SVG nội tuyến.
 
@@ -263,6 +365,8 @@ HRMi/
 ├── tests/test_phase2.py       # Test giờ làm & ca, phép nâng cao, thông báo email
 ├── tests/test_profiles.py     # Test hợp đồng, quá trình công tác, nghỉ việc, giấy tờ, quyền nhạy cảm
 ├── tests/test_assistant.py    # Test trợ lý: tìm kiếm, bộ câu hỏi mẫu theo vai trò, quyền, kho hướng dẫn
+├── tools/screenshots.py       # Chụp ảnh demo cho README (Firefox headless + dữ liệu mô phỏng)
+├── docs/                      # logo.svg, screenshots/ (ảnh demo)
 ├── deploy/hrmi.service       # Chạy tự động bằng systemd
 ├── .github/workflows/tests.yml # CI: chạy test trên GitHub mỗi lần push / PR
 └── instance/                  # Tạo khi chạy: hrm.db, secret_key, photos/, documents/ (không commit)
